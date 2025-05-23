@@ -1,0 +1,83 @@
+// buy.js
+require('dotenv').config();
+const { ethers } = require("ethers");
+
+// Paramètres Uniswap V3 sur Base
+const ROUTER_ADDRESS = "0x2626664c2603336E57B271c5C0b26F421741e481";
+const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
+const ROUTER_ABI = [
+  {
+    "inputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "tokenIn", "type": "address" },
+          { "internalType": "address", "name": "tokenOut", "type": "address" },
+          { "internalType": "uint24", "name": "fee", "type": "uint24" },
+          { "internalType": "address", "name": "recipient", "type": "address" },
+          { "internalType": "uint256", "name": "deadline", "type": "uint256" },
+          { "internalType": "uint256", "name": "amountIn", "type": "uint256" },
+          { "internalType": "uint256", "name": "amountOutMinimum", "type": "uint256" },
+          { "internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160" }
+        ],
+        "internalType": "struct ISwapRouter.ExactInputSingleParams",
+        "name": "params",
+        "type": "tuple"
+      }
+    ],
+    "name": "exactInputSingle",
+    "outputs": [
+      { "internalType": "uint256", "name": "amountOut", "type": "uint256" }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  }
+];
+
+// Récupère les arguments
+const [,, tokenAddress, amountEth] = process.argv;
+
+if (!tokenAddress || !amountEth) {
+  console.error("Usage: node buy.js <token_address> <amount_eth>");
+  process.exit(1);
+}
+
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const RPC_URL = process.env.RPC_URL || "https://mainnet.base.org"; // Mets ton endpoint Base ici
+
+if (!PRIVATE_KEY) {
+  console.error("PRIVATE_KEY manquante dans les variables d'environnement.");
+  process.exit(1);
+}
+
+async function main() {
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+  const router = new ethers.Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
+
+  const amountIn = ethers.parseEther(amountEth);
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+
+  const params = {
+    tokenIn: WETH_ADDRESS,
+    tokenOut: tokenAddress,
+    fee: 3000,
+    recipient: wallet.address,
+    deadline: deadline,
+    amountIn: amountIn,
+    amountOutMinimum: 0,
+    sqrtPriceLimitX96: 0
+  };
+
+  try {
+    const tx = await router.exactInputSingle(
+      params,
+      { value: amountIn, gasLimit: 300000 }
+    );
+    console.log("SUCCESS", tx.hash);
+  } catch (e) {
+    console.error("ERROR", e.reason || e.message || e);
+    process.exit(2);
+  }
+}
+
+main(); 

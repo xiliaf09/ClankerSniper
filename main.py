@@ -9,6 +9,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from web3 import Web3
 import requests
 from clanker import ClankerSniper
+import subprocess
 
 # Configuration du logging
 logging.basicConfig(
@@ -355,9 +356,8 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
 async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Teste l'achat d'un token avec de l'ETH natif via Uniswap V3."""
+    """Teste l'achat d'un token avec de l'ETH natif via Uniswap V3 (en utilisant ethers.js via buy.js)."""
     try:
-        # Vérification des arguments
         if len(context.args) != 2:
             await update.message.reply_text(
                 "❌ Format incorrect. Utilisez:\n"
@@ -366,35 +366,25 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         token_address = context.args[0]
-        amount_eth = float(context.args[1])
+        amount_eth = context.args[1]
 
-        # Validation des entrées
-        if not Web3.is_address(token_address):
-            await update.message.reply_text("❌ Adresse de token invalide")
-            return
-
-        if amount_eth <= 0:
-            await update.message.reply_text("❌ Le montant d'ETH doit être supérieur à 0")
-            return
-
-        # Conversion en wei
-        amount_wei = Web3.to_wei(amount_eth, 'ether')
-
-        # Exécution du swap
-        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
-        
-        if tx_hash and tx_hash.startswith('0x'):
-            await update.message.reply_text(
-                f"✅ Transaction envoyée!\n"
-                f"Hash: {tx_hash}\n"
-                f"Montant: {amount_eth} ETH\n"
-                f"Token: {token_address}\n"
-                f"Voir sur BaseScan: https://basescan.org/tx/{tx_hash}"
-            )
-        else:
-            await update.message.reply_text(
-                f"❌ Échec de la transaction.\nDétail: {tx_hash}"
-            )
+        # Appel du script buy.js
+        try:
+            result = subprocess.run([
+                "node", "buy.js", token_address, amount_eth
+            ], capture_output=True, text=True, timeout=60)
+            output = result.stdout.strip() + result.stderr.strip()
+            if output.startswith("SUCCESS"):
+                tx_hash = output.split()[1]
+                await update.message.reply_text(
+                    f"✅ Transaction envoyée!\nHash: {tx_hash}\nVoir sur BaseScan: https://basescan.org/tx/{tx_hash}"
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ Erreur lors de l'achat :\n{output}"
+                )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erreur lors de l'appel à buy.js : {str(e)}")
 
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur: {str(e)}")
