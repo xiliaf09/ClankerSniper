@@ -34,7 +34,10 @@ const ROUTER_ABI = [
 ];
 
 // Récupère les arguments
-const [,, tokenAddress, amountEth] = process.argv;
+const [,, tokenAddressRaw, amountEth] = process.argv;
+
+// Correction automatique de l'adresse en minuscules
+const tokenAddress = tokenAddressRaw ? tokenAddressRaw.toLowerCase() : null;
 
 if (!tokenAddress || !amountEth) {
   console.error("Usage: node buy.js <token_address> <amount_eth>");
