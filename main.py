@@ -85,7 +85,7 @@ async def handle_new_token(token, context):
                 f"❌ Erreur lors de l'achat: {str(e)}"
             )
 
-async def monitor_tokens(context: ContextTypes.DEFAULT_TYPE):
+async def monitor_tokens_task(context: ContextTypes.DEFAULT_TYPE):
     """Tâche de fond pour monitorer les nouveaux tokens"""
     while True:
         for fid in list(active_snipes.keys()):
@@ -196,7 +196,7 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("Format invalide. Usage: /update <FID> <nouveau_montant>")
 
-def main():
+async def main():
     """Fonction principale"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -209,10 +209,10 @@ def main():
     application.add_handler(CommandHandler("update", update_snipe))
 
     # Démarrage du monitoring en arrière-plan
-    application.job_queue.run_repeating(monitor_tokens, interval=5)
+    asyncio.create_task(monitor_tokens_task(application))
 
     # Démarrage du bot
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main() 
+    asyncio.run(main()) 
