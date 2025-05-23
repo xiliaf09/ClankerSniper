@@ -59,13 +59,14 @@ const POOL_ABI = [
 ];
 
 // Récupère les arguments
-const [,, poolAddressRaw, amountEth] = process.argv;
+const [,, poolAddressRaw, tokenOutRaw, amountEth] = process.argv;
 
 // Correction automatique de l'adresse en minuscules
 const poolAddress = poolAddressRaw ? poolAddressRaw.toLowerCase() : null;
+const tokenOut = tokenOutRaw ? tokenOutRaw.toLowerCase() : null;
 
-if (!poolAddress || !amountEth) {
-  console.error("Usage: node buy.js <pool_address> <amount_eth>");
+if (!poolAddress || !tokenOut || !amountEth) {
+  console.error("Usage: node buy.js <pool_address> <token_out> <amount_eth>");
   process.exit(1);
 }
 
@@ -107,7 +108,7 @@ async function main() {
 
   const params = {
     tokenIn: WETH_ADDRESS,
-    tokenOut: tokenAddress,
+    tokenOut: tokenOut,
     fee: 3000,
     recipient: wallet.address,
     deadline: deadline,
