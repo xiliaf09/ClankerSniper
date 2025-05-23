@@ -38,6 +38,9 @@ active_snipes = {}
 # Nouvelle structure pour suivre les tokens déjà alertés
 alerted_tokens = set()
 
+# Liste des utilisateurs abonnés aux alertes (ayant fait /start)
+subscribed_users = set()
+
 async def notify_user(context, user_id, message):
     """Envoie une notification à l'utilisateur"""
     try:
@@ -112,15 +115,14 @@ async def monitor_new_tokens_task(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Démarrage du monitoring global des nouveaux tokens...")
     while True:
         try:
-            # Appel à l'API Clanker pour récupérer les nouveaux tokens
             response = requests.get("https://www.clanker.world/api/tokens")
             if response.status_code == 200:
                 tokens = response.json().get("data", [])
-                for token in tokens:
+                if tokens:
+                    token = tokens[0]  # Le plus récent
                     token_id = token.get('contract_address')
                     if token_id and token_id not in alerted_tokens:
                         alerted_tokens.add(token_id)
-                        # Préparer le message d'alerte
                         nom = token.get('name', 'N/A')
                         ticker = token.get('symbol', 'N/A')
                         fid = token.get('requestor_fid', 'N/A')
@@ -134,23 +136,24 @@ async def monitor_new_tokens_task(context: ContextTypes.DEFAULT_TYPE):
                             f"Contract : {contract}\n"
                             f"Pool : {pool}"
                         )
-                        # Envoyer l'alerte à tous les utilisateurs ayant interagi avec le bot
-                        for snipe in active_snipes.values():
-                            user_id = snipe['user_id']
+                        # Envoyer l'alerte à tous les abonnés
+                        for user_id in subscribed_users:
                             await notify_user(context, user_id, message)
             else:
                 logger.error(f"Erreur lors de la récupération des nouveaux tokens : {response.status_code}")
         except Exception as e:
             logger.error(f"Erreur dans la boucle de monitoring global : {str(e)}")
-        await asyncio.sleep(1)  # Vérification toutes les secondes
+        await asyncio.sleep(1)
 
 # Commandes du bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /start"""
     logger.info(f"Commande /start reçue de l'utilisateur {update.effective_user.id}")
     try:
+        # Ajouter l'utilisateur à la liste des abonnés
+        subscribed_users.add(update.effective_user.id)
         await update.message.reply_text(
-            "Bienvenue sur ClankerSniper Bot! Utilisez /help pour voir les commandes disponibles."
+            "Bienvenue sur ClankerSniper Bot! Utilisez /help pour voir les commandes disponibles.\n\nVous recevrez désormais une alerte à chaque nouveau Clanker déployé."
         )
         logger.info(f"Message de bienvenue envoyé à l'utilisateur {update.effective_user.id}")
     except Exception as e:
