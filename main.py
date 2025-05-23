@@ -350,6 +350,39 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
+async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /testswapeth <token_address> <amount_eth> : swap ETH natif -> token via Uniswap V3 (comme la tx de référence)"""
+    global slippage
+    try:
+        if len(context.args) != 2:
+            await update.message.reply_text("Usage: /testswapeth <token_address> <amount_eth>")
+            return
+        token_address = context.args[0]
+        amount_eth = float(context.args[1])
+        if amount_eth <= 0:
+            await update.message.reply_text("Le montant doit être supérieur à 0")
+            return
+        amount_in_wei = Web3.to_wei(amount_eth, 'ether')
+        # Estimation du minOut via le Quoter Uniswap
+        try:
+            min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
+        except Exception as e:
+            min_out = 0
+        try:
+            tx_hash = sniper.swap_eth_for_token(
+                token_address=token_address,
+                amount_in_wei=amount_in_wei,
+                min_out=min_out
+            )
+            if tx_hash:
+                await update.message.reply_text(f"✅ Swap ETH natif envoyé !\nTx hash : https://basescan.org/tx/{tx_hash}")
+            else:
+                await update.message.reply_text("❌ Erreur lors de l'envoi du swap ETH natif (aucun hash retourné)")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erreur lors du swap ETH natif : {str(e)}")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur de parsing : {str(e)}")
+
 async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /quote <token_address> <amount_weth> : affiche le minOut estimé et le montant reçu attendu pour diagnostiquer le swap"""
     global slippage
@@ -398,6 +431,7 @@ def main():
     application.add_handler(CommandHandler("update", update_snipe))
     application.add_handler(CommandHandler("lastclanker", lastclanker))
     application.add_handler(CommandHandler("testswap", testswap))
+    application.add_handler(CommandHandler("testswapeth", testswapeth))
     application.add_handler(CommandHandler("slippage", slippage_command))
     application.add_handler(CommandHandler("quote", quote))
 

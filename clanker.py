@@ -216,4 +216,32 @@ class ClankerSniper:
             return tx_hash.hex()
         except Exception as e:
             print(f"Erreur lors du swap_weth_for_token: {str(e)}")
+            return None
+
+    def swap_eth_for_token(self, token_address, amount_in_wei, min_out=0):
+        """Effectue un swap ETH natif -> token via Uniswap V3 (exactInputSingle), retourne le hash de la transaction."""
+        try:
+            router = self.w3.eth.contract(address=self.UNISWAP_V3_ROUTER, abi=self.ROUTER_ABI)
+            params = {
+                'tokenIn': self.WETH_ADDRESS,
+                'tokenOut': token_address,
+                'fee': 3000,
+                'recipient': self.address,
+                'deadline': self.w3.eth.get_block('latest').timestamp + 300,
+                'amountIn': amount_in_wei,
+                'amountOutMinimum': min_out,
+                'sqrtPriceLimitX96': 0
+            }
+            tx = router.functions.exactInputSingle(params).build_transaction({
+                'from': self.address,
+                'value': amount_in_wei,  # ETH natif envoyé
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price,
+                'nonce': self.w3.eth.get_transaction_count(self.address),
+            })
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            return tx_hash.hex()
+        except Exception as e:
+            print(f"Erreur lors du swap_eth_for_token: {str(e)}")
             return None 
