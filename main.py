@@ -380,25 +380,11 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Conversion en wei
         amount_wei = Web3.to_wei(amount_eth, 'ether')
 
-        # Vérification de l'existence de la pool et de la liquidité
-        if not sniper.check_pool_exists(token_address, amount_wei):
-            await update.message.reply_text(
-                "❌ La pool Uniswap V3 WETH/token n'existe pas ou n'a pas de liquidité suffisante pour ce montant."
-            )
-            return
-
-        # Message de début
-        status_msg = await update.message.reply_text(
-            f"🔄 Test d'achat de token avec {amount_eth} ETH...\n"
-            f"Token: {token_address}\n"
-            "⏳ Envoi de la transaction..."
-        )
-
         # Exécution du swap
         tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
         
         if tx_hash and tx_hash.startswith('0x'):
-            await status_msg.edit_text(
+            await update.message.reply_text(
                 f"✅ Transaction envoyée!\n"
                 f"Hash: {tx_hash}\n"
                 f"Montant: {amount_eth} ETH\n"
@@ -406,7 +392,7 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Voir sur BaseScan: https://basescan.org/tx/{tx_hash}"
             )
         else:
-            await status_msg.edit_text(
+            await update.message.reply_text(
                 f"❌ Échec de la transaction.\nDétail: {tx_hash}"
             )
 
