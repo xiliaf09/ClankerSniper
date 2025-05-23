@@ -355,41 +355,56 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
 async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Commande /testswapeth <token_address> <amount_eth> : swap ETH natif -> token via Uniswap V3 (comme la tx de référence)"""
-    global slippage
+    """Teste l'achat d'un token avec de l'ETH natif via Uniswap V3."""
     try:
+        # Vérification des arguments
         if len(context.args) != 2:
-            await update.message.reply_text("Usage: /testswapeth <token_address> <amount_eth>")
+            await update.message.reply_text(
+                "❌ Format incorrect. Utilisez:\n"
+                "/testswapeth <adresse_token> <montant_eth>"
+            )
             return
+
         token_address = context.args[0]
         amount_eth = float(context.args[1])
-        if amount_eth <= 0:
-            await update.message.reply_text("Le montant doit être supérieur à 0")
+
+        # Validation des entrées
+        if not Web3.is_address(token_address):
+            await update.message.reply_text("❌ Adresse de token invalide")
             return
-        amount_in_wei = Web3.to_wei(amount_eth, 'ether')
-        # Estimation du minOut via le Quoter Uniswap
-        try:
-            min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
-            if min_out == 0:
-                await update.message.reply_text("⚠️ Le Quoter Uniswap retourne 0 : la pool n'existe pas, n'a pas de liquidité, ou le montant est trop faible.")
-                return
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ Erreur lors de l'estimation du minOut : {str(e)}")
-            min_out = 0
-        try:
-            tx_hash = sniper.swap_eth_for_token(
-                token_address=token_address,
-                amount_in_wei=amount_in_wei,
-                min_out=min_out
+
+        if amount_eth <= 0:
+            await update.message.reply_text("❌ Le montant d'ETH doit être supérieur à 0")
+            return
+
+        # Conversion en wei
+        amount_wei = Web3.to_wei(amount_eth, 'ether')
+
+        # Message de début
+        status_msg = await update.message.reply_text(
+            f"🔄 Test d'achat de token avec {amount_eth} ETH...\n"
+            f"Token: {token_address}\n"
+            "⏳ Envoi de la transaction..."
+        )
+
+        # Exécution du swap
+        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
+        
+        if tx_hash:
+            await status_msg.edit_text(
+                f"✅ Transaction envoyée!\n"
+                f"Hash: {tx_hash}\n"
+                f"Montant: {amount_eth} ETH\n"
+                f"Token: {token_address}\n"
+                f"Voir sur BaseScan: https://basescan.org/tx/{tx_hash}"
             )
-            if tx_hash:
-                await update.message.reply_text(f"✅ Swap ETH natif envoyé !\nTx hash : https://basescan.org/tx/{tx_hash}")
-            else:
-                await update.message.reply_text("❌ Erreur lors de l'envoi du swap ETH natif (aucun hash retourné)")
-        except Exception as e:
-            await update.message.reply_text(f"❌ Erreur détaillée lors du swap ETH natif : {str(e)}")
+        else:
+            await status_msg.edit_text(
+                "❌ Échec de la transaction. Vérifiez les logs pour plus de détails."
+            )
+
     except Exception as e:
-        await update.message.reply_text(f"Erreur de parsing : {str(e)}")
+        await update.message.reply_text(f"❌ Erreur: {str(e)}")
 
 async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /quote <token_address> <amount_weth> : affiche le minOut estimé et le montant reçu attendu pour diagnostiquer le swap"""
