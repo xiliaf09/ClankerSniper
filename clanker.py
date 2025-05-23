@@ -13,7 +13,7 @@ class ClankerSniper:
 
         # Adresses des contrats sur Base
         self.WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
-        self.UNISWAP_V3_ROUTER = "0x5615CDAb10dc425a742d643d949a7F474C01abc4"
+        self.UNISWAP_V3_ROUTER = "0x2626664c2603336E57B271c5C0b26F421741e481"  # Routeur officiel Uniswap V3 sur Base
         self.UNISWAP_V3_QUOTER = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
 
         # ABI minimal pour les contrats
@@ -191,12 +191,13 @@ class ClankerSniper:
     def swap_weth_for_token(self, router_address, weth_address, token_address, amount_in_wei, min_out=0):
         """Effectue un swap WETH -> token via Uniswap v3 (exactInputSingle), retourne le hash de la transaction."""
         try:
-            router = self.w3.eth.contract(address=router_address, abi=self.ROUTER_ABI)
+            # Utilise toujours le routeur officiel
+            router = self.w3.eth.contract(address=self.UNISWAP_V3_ROUTER, abi=self.ROUTER_ABI)
             # Approve WETH if needed
             self.approve_weth(amount_in_wei)
             params = {
                 'tokenIn': weth_address,
-                'tokenOut': token_address,
+                'tokenOut': token_address,  # le token cible, PAS la pool
                 'fee': 3000,
                 'recipient': self.address,
                 'deadline': self.w3.eth.get_block('latest').timestamp + 300,
