@@ -57,8 +57,18 @@ async function main() {
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const router = new ethers.Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
+  // Vérification du solde ETH
+  const balance = await provider.getBalance(wallet.address);
+  console.log("Solde ETH:", ethers.formatEther(balance), "ETH");
+  
   const amountIn = ethers.parseEther(amountEth);
+  if (balance < amountIn) {
+    console.error("ERROR", "Solde ETH insuffisant");
+    process.exit(2);
+  }
+
   const deadline = Math.floor(Date.now() / 1000) + 300;
+  console.log("Deadline:", new Date(deadline * 1000).toISOString());
 
   const params = {
     tokenIn: WETH_ADDRESS,
@@ -71,10 +81,27 @@ async function main() {
     sqrtPriceLimitX96: 0
   };
 
+  console.log("Paramètres de la transaction:", {
+    tokenIn: params.tokenIn,
+    tokenOut: params.tokenOut,
+    amountIn: ethers.formatEther(params.amountIn),
+    recipient: params.recipient
+  });
+
   try {
+    // Estimation du gas
+    const gasEstimate = await router.exactInputSingle.estimateGas(
+      params,
+      { value: amountIn }
+    );
+    console.log("Estimation gas:", gasEstimate.toString());
+
     const tx = await router.exactInputSingle(
       params,
-      { value: amountIn, gasLimit: 300000 }
+      { 
+        value: amountIn, 
+        gasLimit: Math.floor(gasEstimate * 1.2) // +20% de marge
+      }
     );
     console.log("SUCCESS", tx.hash);
   } catch (e) {
