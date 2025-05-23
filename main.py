@@ -113,18 +113,18 @@ async def monitor_new_tokens_task(context: ContextTypes.DEFAULT_TYPE):
     while True:
         try:
             # Appel à l'API Clanker pour récupérer les nouveaux tokens
-            response = requests.get(f"{CLANKER_API}/tokens/new")
+            response = requests.get("https://www.clanker.world/api/tokens")
             if response.status_code == 200:
-                tokens = response.json()
+                tokens = response.json().get("data", [])
                 for token in tokens:
-                    token_id = token.get('address')
+                    token_id = token.get('contract_address')
                     if token_id and token_id not in alerted_tokens:
                         alerted_tokens.add(token_id)
                         # Préparer le message d'alerte
                         nom = token.get('name', 'N/A')
                         ticker = token.get('symbol', 'N/A')
-                        fid = token.get('fid', 'N/A')
-                        contract = token.get('address', 'N/A')
+                        fid = token.get('requestor_fid', 'N/A')
+                        contract = token.get('contract_address', 'N/A')
                         pool = token.get('pool_address', 'N/A')
                         message = (
                             f"🚨 Nouveau token déployé !\n"
@@ -267,15 +267,15 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def lastclanker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /lastclanker : affiche le dernier token Clanker déployé avec toutes les infos"""
     try:
-        response = requests.get(f"{CLANKER_API}/tokens/new")
+        response = requests.get("https://www.clanker.world/api/tokens")
         if response.status_code == 200:
-            tokens = response.json()
+            tokens = response.json().get("data", [])
             if tokens:
-                token = tokens[0]  # On prend le plus récent
+                token = tokens[0]  # Le plus récent
                 nom = token.get('name', 'N/A')
                 ticker = token.get('symbol', 'N/A')
-                fid = token.get('fid', 'N/A')
-                contract = token.get('address', 'N/A')
+                fid = token.get('requestor_fid', 'N/A')
+                contract = token.get('contract_address', 'N/A')
                 pool = token.get('pool_address', 'N/A')
                 message = (
                     f"🚨 Dernier Clanker déployé :\n"
