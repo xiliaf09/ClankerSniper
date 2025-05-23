@@ -87,27 +87,38 @@ async def handle_new_token(token, context):
 
 async def monitor_tokens_task(context: ContextTypes.DEFAULT_TYPE):
     """Tâche de fond pour monitorer les nouveaux tokens"""
+    logger.info("Démarrage du monitoring des tokens...")
     while True:
-        for fid in list(active_snipes.keys()):
-            try:
-                tokens = sniper.get_clanker_tokens(fid)
-                if tokens:
-                    for token in tokens:
-                        await handle_new_token(token, context)
-            except Exception as e:
-                logger.error(f"Erreur lors du monitoring du FID {fid}: {str(e)}")
-        
-        await asyncio.sleep(5)  # Attente de 5 secondes entre chaque vérification
+        try:
+            for fid in list(active_snipes.keys()):
+                try:
+                    tokens = sniper.get_clanker_tokens(fid)
+                    if tokens:
+                        for token in tokens:
+                            await handle_new_token(token, context)
+                except Exception as e:
+                    logger.error(f"Erreur lors du monitoring du FID {fid}: {str(e)}")
+            
+            await asyncio.sleep(5)  # Attente de 5 secondes entre chaque vérification
+        except Exception as e:
+            logger.error(f"Erreur dans la boucle de monitoring: {str(e)}")
+            await asyncio.sleep(5)
 
 # Commandes du bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /start"""
-    await update.message.reply_text(
-        "Bienvenue sur ClankerSniper Bot! Utilisez /help pour voir les commandes disponibles."
-    )
+    logger.info(f"Commande /start reçue de l'utilisateur {update.effective_user.id}")
+    try:
+        await update.message.reply_text(
+            "Bienvenue sur ClankerSniper Bot! Utilisez /help pour voir les commandes disponibles."
+        )
+        logger.info(f"Message de bienvenue envoyé à l'utilisateur {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi du message de bienvenue: {str(e)}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /help"""
+    logger.info(f"Commande /help reçue de l'utilisateur {update.effective_user.id}")
     help_text = """
 Commandes disponibles:
 
@@ -117,10 +128,15 @@ Commandes disponibles:
 /update <FID> <nouveau_montant> - Met à jour le montant d'un snipe
 /help - Affiche ce message d'aide
     """
-    await update.message.reply_text(help_text)
+    try:
+        await update.message.reply_text(help_text)
+        logger.info(f"Message d'aide envoyé à l'utilisateur {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi du message d'aide: {str(e)}")
 
 async def snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /snipe"""
+    logger.info(f"Commande /snipe reçue de l'utilisateur {update.effective_user.id}")
     try:
         if len(context.args) != 2:
             await update.message.reply_text("Usage: /snipe <FID> <montant_WETH>")
@@ -142,12 +158,15 @@ async def snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Snipe configuré pour le FID {fid} avec {amount} WETH"
         )
+        logger.info(f"Snipe configuré pour le FID {fid} avec {amount} WETH par l'utilisateur {update.effective_user.id}")
 
     except ValueError:
         await update.message.reply_text("Format invalide. Usage: /snipe <FID> <montant_WETH>")
+        logger.error(f"Format invalide pour la commande /snipe de l'utilisateur {update.effective_user.id}")
 
 async def list_snipes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /list"""
+    logger.info(f"Commande /list reçue de l'utilisateur {update.effective_user.id}")
     if not active_snipes:
         await update.message.reply_text("Aucun snipe actif")
         return
@@ -158,10 +177,15 @@ async def list_snipes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"Montant: {data['amount']} WETH\n"
         message += f"Configuré le: {data['timestamp']}\n\n"
 
-    await update.message.reply_text(message)
+    try:
+        await update.message.reply_text(message)
+        logger.info(f"Liste des snipe envoyée à l'utilisateur {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi de la liste des snipe: {str(e)}")
 
 async def remove_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /remove"""
+    logger.info(f"Commande /remove reçue de l'utilisateur {update.effective_user.id}")
     if not context.args or len(context.args) != 1:
         await update.message.reply_text("Usage: /remove <FID>")
         return
@@ -170,11 +194,13 @@ async def remove_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if fid in active_snipes:
         del active_snipes[fid]
         await update.message.reply_text(f"Snipe pour le FID {fid} supprimé")
+        logger.info(f"Snipe pour le FID {fid} supprimé par l'utilisateur {update.effective_user.id}")
     else:
         await update.message.reply_text(f"Aucun snipe trouvé pour le FID {fid}")
 
 async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /update"""
+    logger.info(f"Commande /update reçue de l'utilisateur {update.effective_user.id}")
     if len(context.args) != 2:
         await update.message.reply_text("Usage: /update <FID> <nouveau_montant>")
         return
@@ -190,14 +216,18 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if fid in active_snipes:
             active_snipes[fid]['amount'] = new_amount
             await update.message.reply_text(f"Montant mis à jour pour le FID {fid}: {new_amount} WETH")
+            logger.info(f"Montant mis à jour pour le FID {fid}: {new_amount} WETH par l'utilisateur {update.effective_user.id}")
         else:
             await update.message.reply_text(f"Aucun snipe trouvé pour le FID {fid}")
 
     except ValueError:
         await update.message.reply_text("Format invalide. Usage: /update <FID> <nouveau_montant>")
+        logger.error(f"Format invalide pour la commande /update de l'utilisateur {update.effective_user.id}")
 
 async def main():
     """Fonction principale"""
+    logger.info("Démarrage du bot...")
+    
     # Création de l'application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -209,13 +239,20 @@ async def main():
     application.add_handler(CommandHandler("remove", remove_snipe))
     application.add_handler(CommandHandler("update", update_snipe))
 
+    logger.info("Handlers configurés, démarrage du monitoring...")
+    
     # Démarrage du monitoring en arrière-plan
     asyncio.create_task(monitor_tokens_task(application))
 
+    logger.info("Démarrage du polling...")
+    
     # Démarrage du bot
     await application.initialize()
     await application.start()
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    asyncio.run(main()) 
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Erreur fatale dans le bot: {str(e)}") 
