@@ -264,6 +264,35 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Format invalide. Usage: /update <FID> <nouveau_montant>")
         logger.error(f"Format invalide pour la commande /update de l'utilisateur {update.effective_user.id}")
 
+async def lastclanker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /lastclanker : affiche le dernier token Clanker déployé avec toutes les infos"""
+    try:
+        response = requests.get(f"{CLANKER_API}/tokens/new")
+        if response.status_code == 200:
+            tokens = response.json()
+            if tokens:
+                token = tokens[0]  # On prend le plus récent
+                nom = token.get('name', 'N/A')
+                ticker = token.get('symbol', 'N/A')
+                fid = token.get('fid', 'N/A')
+                contract = token.get('address', 'N/A')
+                pool = token.get('pool_address', 'N/A')
+                message = (
+                    f"🚨 Dernier Clanker déployé :\n"
+                    f"Nom : {nom}\n"
+                    f"Ticker : {ticker}\n"
+                    f"FID : {fid}\n"
+                    f"Contract : {contract}\n"
+                    f"Pool : {pool}"
+                )
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("Aucun token Clanker trouvé récemment.")
+        else:
+            await update.message.reply_text(f"Erreur lors de la récupération : {response.status_code}")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur lors de la récupération du dernier Clanker : {str(e)}")
+
 async def post_init(application):
     # Démarrage du monitoring global en arrière-plan une fois l'application prête
     asyncio.create_task(monitor_new_tokens_task(application))
@@ -280,6 +309,7 @@ def main():
     application.add_handler(CommandHandler("list", list_snipes))
     application.add_handler(CommandHandler("remove", remove_snipe))
     application.add_handler(CommandHandler("update", update_snipe))
+    application.add_handler(CommandHandler("lastclanker", lastclanker))
 
     logger.info("Handlers configurés, démarrage du polling...")
 
