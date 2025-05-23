@@ -33,6 +33,31 @@ const ROUTER_ABI = [
   }
 ];
 
+const FACTORY_ADDRESS = "0x33128a8fC17869897dcE68Ed026d694621f6FDfD";
+const FACTORY_ABI = [
+  {
+    "inputs": [
+      { "internalType": "address", "name": "tokenA", "type": "address" },
+      { "internalType": "address", "name": "tokenB", "type": "address" },
+      { "internalType": "uint24", "name": "fee", "type": "uint24" }
+    ],
+    "name": "getPool",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+const POOL_ABI = [
+  {
+    "inputs": [],
+    "name": "liquidity",
+    "outputs": [{ "internalType": "uint128", "name": "", "type": "uint128" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
 // Récupère les arguments
 const [,, tokenAddressRaw, amountEth] = process.argv;
 
@@ -56,6 +81,7 @@ async function main() {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const router = new ethers.Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
+  const factory = new ethers.Contract(FACTORY_ADDRESS, FACTORY_ABI, provider);
 
   // Vérification du solde ETH
   const balance = await provider.getBalance(wallet.address);
@@ -64,6 +90,25 @@ async function main() {
   const amountIn = ethers.parseEther(amountEth);
   if (balance < amountIn) {
     console.error("ERROR", "Solde ETH insuffisant");
+    process.exit(2);
+  }
+
+  // Vérification de la pool
+  const poolAddress = await factory.getPool(WETH_ADDRESS, tokenAddress, 3000);
+  console.log("Pool address:", poolAddress);
+  
+  if (poolAddress === "0x0000000000000000000000000000000000000000") {
+    console.error("ERROR", "Pool n'existe pas pour ce token");
+    process.exit(2);
+  }
+
+  // Vérification de la liquidité
+  const pool = new ethers.Contract(poolAddress, POOL_ABI, provider);
+  const liquidity = await pool.liquidity();
+  console.log("Liquidité de la pool:", liquidity.toString());
+  
+  if (liquidity === 0n) {
+    console.error("ERROR", "Pool n'a pas de liquidité");
     process.exit(2);
   }
 
