@@ -361,33 +361,35 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(context.args) != 2:
             await update.message.reply_text(
                 "❌ Format incorrect. Utilisez:\n"
-                "/testswapeth <adresse_token> <montant_eth>"
+                "/testswapeth <adresse_pool> <montant_eth>"
             )
             return
 
-        token_address = context.args[0]
+        pool_address = context.args[0]
         amount_eth = context.args[1]
 
         # Appel du script buy.js
         try:
             result = subprocess.run([
-                "node", "buy.js", token_address, amount_eth
-            ], capture_output=True, text=True, timeout=60)
-            output = result.stdout.strip() + result.stderr.strip()
-            if output.startswith("SUCCESS"):
-                tx_hash = output.split()[1]
+                "node", "buy.js", pool_address, amount_eth
+            ], capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                # Succès
+                tx_hash = result.stdout.strip().split(" ")[1]
                 await update.message.reply_text(
-                    f"✅ Transaction envoyée!\nHash: {tx_hash}\nVoir sur BaseScan: https://basescan.org/tx/{tx_hash}"
+                    f"✅ Transaction envoyée !\n"
+                    f"Hash: {tx_hash}\n"
+                    f"Explorer: https://basescan.org/tx/{tx_hash}"
                 )
             else:
-                await update.message.reply_text(
-                    f"❌ Erreur lors de l'achat :\n{output}"
-                )
+                # Erreur
+                error_msg = result.stderr.strip()
+                await update.message.reply_text(f"❌ Erreur lors de l'achat :\n{error_msg}")
         except Exception as e:
             await update.message.reply_text(f"❌ Erreur lors de l'appel à buy.js : {str(e)}")
-
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur: {str(e)}")
+        await update.message.reply_text(f"❌ Erreur : {str(e)}")
 
 async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /quote <token_address> <amount_weth> : affiche le minOut estimé et le montant reçu attendu pour diagnostiquer le swap"""

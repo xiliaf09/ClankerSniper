@@ -59,18 +59,18 @@ const POOL_ABI = [
 ];
 
 // Récupère les arguments
-const [,, tokenAddressRaw, amountEth] = process.argv;
+const [,, poolAddressRaw, amountEth] = process.argv;
 
 // Correction automatique de l'adresse en minuscules
-const tokenAddress = tokenAddressRaw ? tokenAddressRaw.toLowerCase() : null;
+const poolAddress = poolAddressRaw ? poolAddressRaw.toLowerCase() : null;
 
-if (!tokenAddress || !amountEth) {
-  console.error("Usage: node buy.js <token_address> <amount_eth>");
+if (!poolAddress || !amountEth) {
+  console.error("Usage: node buy.js <pool_address> <amount_eth>");
   process.exit(1);
 }
 
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const RPC_URL = process.env.RPC_URL || "https://mainnet.base.org"; // Mets ton endpoint Base ici
+const RPC_URL = process.env.RPC_URL || "https://mainnet.base.org";
 
 if (!PRIVATE_KEY) {
   console.error("PRIVATE_KEY manquante dans les variables d'environnement.");
@@ -81,7 +81,6 @@ async function main() {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const router = new ethers.Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
-  const factory = new ethers.Contract(FACTORY_ADDRESS, FACTORY_ABI, provider);
 
   // Vérification du solde ETH
   const balance = await provider.getBalance(wallet.address);
@@ -90,15 +89,6 @@ async function main() {
   const amountIn = ethers.parseEther(amountEth);
   if (balance < amountIn) {
     console.error("ERROR", "Solde ETH insuffisant");
-    process.exit(2);
-  }
-
-  // Vérification de la pool
-  const poolAddress = await factory.getPool(WETH_ADDRESS, tokenAddress, 3000);
-  console.log("Pool address:", poolAddress);
-  
-  if (poolAddress === "0x0000000000000000000000000000000000000000") {
-    console.error("ERROR", "Pool n'existe pas pour ce token");
     process.exit(2);
   }
 
