@@ -358,21 +358,20 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Teste l'achat d'un token avec de l'ETH natif via Uniswap V3 (en utilisant ethers.js via buy.js)."""
     try:
-        if len(context.args) != 3:
+        if len(context.args) != 2:
             await update.message.reply_text(
                 "❌ Format incorrect. Utilisez:\n"
-                "/testswapeth <adresse_pool> <adresse_token> <montant_eth>"
+                "/testswapeth <adresse_pool> <montant_eth>"
             )
             return
 
         pool_address = context.args[0]
-        token_address = context.args[1]
-        amount_eth = context.args[2]
+        amount_eth = context.args[1]
 
         # Appel du script buy.js
         try:
             result = subprocess.run([
-                "node", "buy.js", pool_address, token_address, amount_eth
+                "node", "buy.js", pool_address, amount_eth
             ], capture_output=True, text=True)
             
             if result.returncode == 0:

@@ -59,14 +59,13 @@ const POOL_ABI = [
 ];
 
 // Récupère les arguments
-const [,, poolAddressRaw, tokenOutRaw, amountEth] = process.argv;
+const [,, poolAddressRaw, amountEth] = process.argv;
 
 // Correction automatique de l'adresse en minuscules
 const poolAddress = poolAddressRaw ? poolAddressRaw.toLowerCase() : null;
-const tokenOut = tokenOutRaw ? tokenOutRaw.toLowerCase() : null;
 
-if (!poolAddress || !tokenOut || !amountEth) {
-  console.error("Usage: node buy.js <pool_address> <token_out> <amount_eth>");
+if (!poolAddress || !amountEth) {
+  console.error("Usage: node buy.js <pool_address> <amount_eth>");
   process.exit(1);
 }
 
@@ -77,6 +76,12 @@ if (!PRIVATE_KEY) {
   console.error("PRIVATE_KEY manquante dans les variables d'environnement.");
   process.exit(1);
 }
+
+const POOL_ABI_EXTENDED = [
+  ...POOL_ABI,
+  { "inputs": [], "name": "token0", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "token1", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" }
+];
 
 async function main() {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -93,13 +98,28 @@ async function main() {
     process.exit(2);
   }
 
-  // Vérification de la liquidité
-  const pool = new ethers.Contract(poolAddress, POOL_ABI, provider);
+  // Vérification de la liquidité et détection du sens
+  const pool = new ethers.Contract(poolAddress, POOL_ABI_EXTENDED, provider);
   const liquidity = await pool.liquidity();
+  const token0 = await pool.token0();
+  const token1 = await pool.token1();
+  console.log("token0:", token0, "token1:", token1);
   console.log("Liquidité de la pool:", liquidity.toString());
   
   if (liquidity === 0n) {
     console.error("ERROR", "Pool n'a pas de liquidité");
+    process.exit(2);
+  }
+
+  let tokenOut;
+  if (token0.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+    tokenOut = token1;
+    console.log("Swap ETH -> token1 (tokenOut):", tokenOut);
+  } else if (token1.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+    tokenOut = token0;
+    console.log("Swap ETH -> token0 (tokenOut):", tokenOut);
+  } else {
+    console.error("ERROR", "Aucun WETH dans la pool !");
     process.exit(2);
   }
 
