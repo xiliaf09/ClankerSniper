@@ -88,13 +88,13 @@ async function main() {
   const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
   const router = new ethers.Contract(ROUTER_ADDRESS, ROUTER_ABI, wallet);
 
-  // Vérification du solde ETH
+  // Solde ETH
   const balance = await provider.getBalance(wallet.address);
-  console.log("Solde ETH:", ethers.formatEther(balance), "ETH");
-  
+  console.log("[INFO] Solde ETH:", ethers.formatEther(balance), "ETH");
+
   const amountIn = ethers.parseEther(amountEth);
   if (balance < amountIn) {
-    console.error("ERROR", "Solde ETH insuffisant");
+    console.error("[ERROR] Solde ETH insuffisant");
     process.exit(2);
   }
 
@@ -103,28 +103,36 @@ async function main() {
   const liquidity = await pool.liquidity();
   const token0 = await pool.token0();
   const token1 = await pool.token1();
-  console.log("token0:", token0, "token1:", token1);
-  console.log("Liquidité de la pool:", liquidity.toString());
-  
+  console.log(`[INFO] Pool: ${poolAddress}`);
+  console.log(`[INFO] token0: ${token0}`);
+  console.log(`[INFO] token1: ${token1}`);
+  console.log(`[INFO] Liquidité de la pool: ${liquidity.toString()}`);
+
   if (liquidity === 0n) {
-    console.error("ERROR", "Pool n'a pas de liquidité");
+    console.error("[ERROR] Pool n'a pas de liquidité");
     process.exit(2);
   }
 
   let tokenOut;
   if (token0.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
     tokenOut = token1;
-    console.log("Swap ETH -> token1 (tokenOut):", tokenOut);
+    console.log(`[INFO] Swap ETH -> token1 (tokenOut): ${tokenOut}`);
   } else if (token1.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
     tokenOut = token0;
-    console.log("Swap ETH -> token0 (tokenOut):", tokenOut);
+    console.log(`[INFO] Swap ETH -> token0 (tokenOut): ${tokenOut}`);
   } else {
-    console.error("ERROR", "Aucun WETH dans la pool !");
+    console.error("[ERROR] Aucun WETH dans la pool !");
     process.exit(2);
   }
 
+  // Solde du token cible
+  const ERC20_ABI = ["function balanceOf(address) view returns (uint256)"];
+  const tokenContract = new ethers.Contract(tokenOut, ERC20_ABI, provider);
+  const tokenBalance = await tokenContract.balanceOf(wallet.address);
+  console.log(`[INFO] Solde du token cible (${tokenOut}): ${ethers.formatUnits(tokenBalance, 18)}`);
+
   const deadline = Math.floor(Date.now() / 1000) + 300;
-  console.log("Deadline:", new Date(deadline * 1000).toISOString());
+  console.log(`[INFO] Deadline: ${new Date(deadline * 1000).toISOString()}`);
 
   const params = {
     tokenIn: WETH_ADDRESS,
@@ -137,12 +145,18 @@ async function main() {
     sqrtPriceLimitX96: 0
   };
 
-  console.log("Paramètres de la transaction:", {
+  console.log("[INFO] Paramètres de la transaction:", JSON.stringify({
+    router: ROUTER_ADDRESS,
+    pool: poolAddress,
     tokenIn: params.tokenIn,
     tokenOut: params.tokenOut,
-    amountIn: ethers.formatEther(params.amountIn),
-    recipient: params.recipient
-  });
+    fee: params.fee,
+    recipient: params.recipient,
+    deadline: params.deadline,
+    amountIn: params.amountIn.toString(),
+    amountOutMinimum: params.amountOutMinimum,
+    sqrtPriceLimitX96: params.sqrtPriceLimitX96
+  }, null, 2));
 
   try {
     // Estimation du gas
@@ -150,7 +164,7 @@ async function main() {
       params,
       { value: amountIn }
     );
-    console.log("Estimation gas:", gasEstimate.toString());
+    console.log("[INFO] Estimation gas:", gasEstimate.toString());
 
     const tx = await router.exactInputSingle(
       params,
@@ -161,7 +175,14 @@ async function main() {
     );
     console.log("SUCCESS", tx.hash);
   } catch (e) {
-    console.error("ERROR", e.reason || e.message || e);
+    console.error("[ERROR] Swap failed:");
+    console.error("[ERROR] Reason:", e.reason || e.message || e);
+    if (e.transaction) {
+      console.error("[ERROR] Transaction:", JSON.stringify(e.transaction, null, 2));
+    }
+    if (e.data) {
+      console.error("[ERROR] Data:", e.data);
+    }
     process.exit(2);
   }
 }
