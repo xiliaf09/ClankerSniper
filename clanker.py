@@ -3,6 +3,7 @@ import requests
 from web3 import Web3
 from eth_account import Account
 from web3.middleware import geth_poa_middleware
+import time
 
 class ClankerSniper:
     def __init__(self, rpc_url, private_key):
@@ -261,17 +262,17 @@ class ClankerSniper:
             if eth_balance < amount_in_wei:
                 raise Exception(f"Solde ETH insuffisant: {Web3.from_wei(eth_balance, 'ether')} ETH < {Web3.from_wei(amount_in_wei, 'ether')} ETH requis")
 
-            # 2. Construction des paramètres du swap
-            params = {
-                'tokenIn': self.WETH_ADDRESS,  # WETH (le routeur wrappe l'ETH automatiquement)
-                'tokenOut': token_address,     # Token cible
-                'fee': 3000,                   # 0.3% fee tier
-                'recipient': self.address,     # On reçoit les tokens
-                'deadline': self.w3.eth.get_block('latest').timestamp + 300,  # 5 minutes
-                'amountIn': amount_in_wei,     # Montant ETH en wei
-                'amountOutMinimum': min_out,   # Protection contre le slippage
-                'sqrtPriceLimitX96': 0         # Pas de limite de prix
-            }
+            # 2. Construction des paramètres du swap (tuple, pas dict !)
+            params = (
+                self.WETH_ADDRESS,      # tokenIn
+                token_address,         # tokenOut
+                3000,                  # fee
+                self.address,          # recipient
+                int(time.time()) + 300,# deadline
+                amount_in_wei,         # amountIn
+                min_out,               # amountOutMinimum
+                0                      # sqrtPriceLimitX96
+            )
 
             # 3. Simulation de la transaction
             try:
@@ -280,6 +281,7 @@ class ClankerSniper:
                     'value': amount_in_wei
                 })
             except Exception as e:
+                print(f"[SIMULATION REVERT] {str(e)}")
                 raise Exception(f"Échec de la simulation: {str(e)}")
 
             # 4. Construction et envoi de la transaction
@@ -312,4 +314,4 @@ class ClankerSniper:
 
         except Exception as e:
             print(f"Erreur détaillée lors du swap ETH -> token: {str(e)}")
-            return None 
+            return str(e) 

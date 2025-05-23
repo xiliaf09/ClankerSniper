@@ -390,7 +390,7 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Exécution du swap
         tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
         
-        if tx_hash:
+        if tx_hash and tx_hash.startswith('0x'):
             await status_msg.edit_text(
                 f"✅ Transaction envoyée!\n"
                 f"Hash: {tx_hash}\n"
@@ -400,7 +400,7 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await status_msg.edit_text(
-                "❌ Échec de la transaction. Vérifiez les logs pour plus de détails."
+                f"❌ Échec de la transaction.\nDétail: {tx_hash}"
             )
 
     except Exception as e:
