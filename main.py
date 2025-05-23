@@ -250,7 +250,18 @@ async def main():
     await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
+    import sys
+    import asyncio
+
     try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Si la boucle tourne déjà (cas Railway), on crée une tâche
+            loop.create_task(main())
+        else:
+            loop.run_until_complete(main())
+    except RuntimeError:
+        # Si aucune boucle n'existe, on en crée une
         asyncio.run(main())
     except Exception as e:
         logger.error(f"Erreur fatale dans le bot: {str(e)}") 
