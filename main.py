@@ -229,14 +229,11 @@ async def post_init(application):
     asyncio.create_task(monitor_tokens_task(application))
     logger.info("Monitoring des tokens lancé via post_init.")
 
-async def main():
-    """Fonction principale"""
+def main():
     logger.info("Démarrage du bot...")
-    
-    # Création de l'application avec post_init
+
     application = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
-    # Ajout des handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("snipe", snipe))
@@ -245,23 +242,12 @@ async def main():
     application.add_handler(CommandHandler("update", update_snipe))
 
     logger.info("Handlers configurés, démarrage du polling...")
-    
-    # Démarrage du bot (run_polling gère tout)
-    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+    # Lancement synchrone (PTB gère l'event loop)
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    import sys
-    import asyncio
-
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Si la boucle tourne déjà (cas Railway), on crée une tâche
-            loop.create_task(main())
-        else:
-            loop.run_until_complete(main())
-    except RuntimeError:
-        # Si aucune boucle n'existe, on en crée une
-        asyncio.run(main())
+        main()
     except Exception as e:
         logger.error(f"Erreur fatale dans le bot: {str(e)}") 
