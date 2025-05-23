@@ -331,7 +331,11 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Estimation du minOut via le Quoter Uniswap
         try:
             min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
+            if min_out == 0:
+                await update.message.reply_text("⚠️ Le Quoter Uniswap retourne 0 : la pool n'existe pas, n'a pas de liquidité, ou le montant est trop faible.")
+                return
         except Exception as e:
+            await update.message.reply_text(f"⚠️ Erreur lors de l'estimation du minOut : {str(e)}")
             min_out = 0
         try:
             tx_hash = sniper.swap_weth_for_token(
@@ -346,7 +350,7 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("❌ Erreur lors de l'envoi du swap (aucun hash retourné)")
         except Exception as e:
-            await update.message.reply_text(f"❌ Erreur lors du swap : {str(e)}")
+            await update.message.reply_text(f"❌ Erreur détaillée lors du swap : {str(e)}")
     except Exception as e:
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
@@ -366,7 +370,11 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Estimation du minOut via le Quoter Uniswap
         try:
             min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
+            if min_out == 0:
+                await update.message.reply_text("⚠️ Le Quoter Uniswap retourne 0 : la pool n'existe pas, n'a pas de liquidité, ou le montant est trop faible.")
+                return
         except Exception as e:
+            await update.message.reply_text(f"⚠️ Erreur lors de l'estimation du minOut : {str(e)}")
             min_out = 0
         try:
             tx_hash = sniper.swap_eth_for_token(
@@ -379,7 +387,7 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("❌ Erreur lors de l'envoi du swap ETH natif (aucun hash retourné)")
         except Exception as e:
-            await update.message.reply_text(f"❌ Erreur lors du swap ETH natif : {str(e)}")
+            await update.message.reply_text(f"❌ Erreur détaillée lors du swap ETH natif : {str(e)}")
     except Exception as e:
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 

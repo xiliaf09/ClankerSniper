@@ -193,8 +193,17 @@ class ClankerSniper:
         try:
             # Utilise toujours le routeur officiel
             router = self.w3.eth.contract(address=self.UNISWAP_V3_ROUTER, abi=self.ROUTER_ABI)
+            
+            # Vérification du solde WETH
+            weth_balance = self.w3.eth.get_balance(self.address)
+            if weth_balance < amount_in_wei:
+                raise Exception(f"Solde WETH insuffisant: {Web3.from_wei(weth_balance, 'ether')} WETH < {Web3.from_wei(amount_in_wei, 'ether')} WETH requis")
+
             # Approve WETH if needed
-            self.approve_weth(amount_in_wei)
+            approve_tx = self.approve_weth(amount_in_wei)
+            if not approve_tx:
+                raise Exception("Échec de l'approbation WETH")
+
             params = {
                 'tokenIn': weth_address,
                 'tokenOut': token_address,  # le token cible, PAS la pool
@@ -205,23 +214,52 @@ class ClankerSniper:
                 'amountOutMinimum': min_out,
                 'sqrtPriceLimitX96': 0
             }
+
+            # Simulation de la transaction avant envoi
+            try:
+                router.functions.exactInputSingle(params).call({
+                    'from': self.address,
+                    'value': 0
+                })
+            except Exception as e:
+                raise Exception(f"Échec de la simulation du swap: {str(e)}")
+
             tx = router.functions.exactInputSingle(params).build_transaction({
                 'from': self.address,
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price,
                 'nonce': self.w3.eth.get_transaction_count(self.address),
             })
+
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Attente de la confirmation et vérification du statut
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            if receipt['status'] == 0:
+                # Récupération de la raison de l'échec
+                try:
+                    tx = self.w3.eth.get_transaction(tx_hash)
+                    result = self.w3.eth.call(tx, block_identifier=receipt['blockNumber']-1)
+                    raise Exception(f"Transaction échouée: {result}")
+                except Exception as e:
+                    raise Exception(f"Transaction échouée: {str(e)}")
+            
             return tx_hash.hex()
         except Exception as e:
-            print(f"Erreur lors du swap_weth_for_token: {str(e)}")
+            print(f"Erreur détaillée lors du swap_weth_for_token: {str(e)}")
             return None
 
     def swap_eth_for_token(self, token_address, amount_in_wei, min_out=0):
         """Effectue un swap ETH natif -> token via Uniswap V3 (exactInputSingle), retourne le hash de la transaction."""
         try:
             router = self.w3.eth.contract(address=self.UNISWAP_V3_ROUTER, abi=self.ROUTER_ABI)
+            
+            # Vérification du solde ETH
+            eth_balance = self.w3.eth.get_balance(self.address)
+            if eth_balance < amount_in_wei:
+                raise Exception(f"Solde ETH insuffisant: {Web3.from_wei(eth_balance, 'ether')} ETH < {Web3.from_wei(amount_in_wei, 'ether')} ETH requis")
+
             params = {
                 'tokenIn': self.WETH_ADDRESS,
                 'tokenOut': token_address,
@@ -232,6 +270,16 @@ class ClankerSniper:
                 'amountOutMinimum': min_out,
                 'sqrtPriceLimitX96': 0
             }
+
+            # Simulation de la transaction avant envoi
+            try:
+                router.functions.exactInputSingle(params).call({
+                    'from': self.address,
+                    'value': amount_in_wei
+                })
+            except Exception as e:
+                raise Exception(f"Échec de la simulation du swap: {str(e)}")
+
             tx = router.functions.exactInputSingle(params).build_transaction({
                 'from': self.address,
                 'value': amount_in_wei,  # ETH natif envoyé
@@ -239,9 +287,22 @@ class ClankerSniper:
                 'gasPrice': self.w3.eth.gas_price,
                 'nonce': self.w3.eth.get_transaction_count(self.address),
             })
+
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Attente de la confirmation et vérification du statut
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            if receipt['status'] == 0:
+                # Récupération de la raison de l'échec
+                try:
+                    tx = self.w3.eth.get_transaction(tx_hash)
+                    result = self.w3.eth.call(tx, block_identifier=receipt['blockNumber']-1)
+                    raise Exception(f"Transaction échouée: {result}")
+                except Exception as e:
+                    raise Exception(f"Transaction échouée: {str(e)}")
+            
             return tx_hash.hex()
         except Exception as e:
-            print(f"Erreur lors du swap_eth_for_token: {str(e)}")
+            print(f"Erreur détaillée lors du swap_eth_for_token: {str(e)}")
             return None 
