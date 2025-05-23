@@ -109,7 +109,7 @@ async function main() {
   const params = {
     tokenIn: WETH_ADDRESS,
     tokenOut: tokenOut,
-    fee: 3000,
+    fee: 10000,
     recipient: wallet.address,
     deadline: deadline,
     amountIn: amountIn,
