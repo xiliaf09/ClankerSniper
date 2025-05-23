@@ -436,6 +436,15 @@ async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /balance : affiche le solde ETH du wallet du bot."""
+    try:
+        eth_balance = w3.eth.get_balance(sniper.address)
+        eth_balance_eth = Web3.from_wei(eth_balance, 'ether')
+        await update.message.reply_text(f"Solde du wallet : {eth_balance_eth} ETH\nAdresse : {sniper.address}")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur lors de la récupération du solde : {str(e)}")
+
 async def post_init(application):
     # Démarrage du monitoring global en arrière-plan une fois l'application prête
     asyncio.create_task(monitor_new_tokens_task(application))
@@ -457,6 +466,7 @@ def main():
     application.add_handler(CommandHandler("testswapeth", testswapeth))
     application.add_handler(CommandHandler("slippage", slippage_command))
     application.add_handler(CommandHandler("quote", quote))
+    application.add_handler(CommandHandler("balance", balance))
 
     logger.info("Handlers configurés, démarrage du polling...")
 
