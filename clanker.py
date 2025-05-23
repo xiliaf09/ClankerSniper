@@ -13,7 +13,7 @@ class ClankerSniper:
 
         # Adresses des contrats sur Base
         self.WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
-        self.UNISWAP_V3_ROUTER = "0x2626664c2603336E57B271c5C0b26F421741e481"
+        self.UNISWAP_V3_ROUTER = "0x5615CDAb10dc425a742d643d949a7F474C01abc4"
         self.UNISWAP_V3_QUOTER = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
 
         # ABI minimal pour les contrats
