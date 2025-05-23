@@ -224,12 +224,17 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Format invalide. Usage: /update <FID> <nouveau_montant>")
         logger.error(f"Format invalide pour la commande /update de l'utilisateur {update.effective_user.id}")
 
+async def post_init(application):
+    # Démarrage du monitoring en arrière-plan une fois l'application prête
+    asyncio.create_task(monitor_tokens_task(application))
+    logger.info("Monitoring des tokens lancé via post_init.")
+
 async def main():
     """Fonction principale"""
     logger.info("Démarrage du bot...")
     
-    # Création de l'application
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Création de l'application avec post_init
+    application = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     # Ajout des handlers
     application.add_handler(CommandHandler("start", start))
@@ -239,16 +244,9 @@ async def main():
     application.add_handler(CommandHandler("remove", remove_snipe))
     application.add_handler(CommandHandler("update", update_snipe))
 
-    logger.info("Handlers configurés, démarrage du monitoring...")
+    logger.info("Handlers configurés, démarrage du polling...")
     
-    # Démarrage du monitoring en arrière-plan
-    asyncio.create_task(monitor_tokens_task(application))
-
-    logger.info("Démarrage du polling...")
-    
-    # Démarrage du bot
-    await application.initialize()
-    await application.start()
+    # Démarrage du bot (run_polling gère tout)
     await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
