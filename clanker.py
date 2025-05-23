@@ -144,3 +144,32 @@ class ClankerSniper:
                         if token.get('blockNumber', 0) > last_checked_block:
                             callback(token)
                 last_checked_block = current_block 
+
+    def swap_weth_for_token(self, router_address, weth_address, token_address, amount_in_wei):
+        """Effectue un swap WETH -> token via Uniswap v3 (exactInputSingle), retourne le hash de la transaction."""
+        try:
+            router = self.w3.eth.contract(address=router_address, abi=self.ROUTER_ABI)
+            # Approve WETH if needed
+            self.approve_weth(amount_in_wei)
+            params = {
+                'tokenIn': weth_address,
+                'tokenOut': token_address,
+                'fee': 3000,  # 0.3% fee tier
+                'amountIn': amount_in_wei,
+                'amountOutMinimum': 0,  # Attention: Risque de slippage
+                'sqrtPriceLimitX96': 0,
+                'recipient': self.address,
+                'deadline': self.w3.eth.get_block('latest').timestamp + 300
+            }
+            tx = router.functions.exactInputSingle(params).build_transaction({
+                'from': self.address,
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price,
+                'nonce': self.w3.eth.get_transaction_count(self.address),
+            })
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            return tx_hash.hex()
+        except Exception as e:
+            print(f"Erreur lors du swap_weth_for_token: {str(e)}")
+            return None 

@@ -25,6 +25,8 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 PRIVATE_KEY = os.getenv('PRIVATE_KEY')
 QUICKNODE_RPC = "https://damp-necessary-frog.base-mainnet.quiknode.pro/d60be1af9ee2c8dade56c2372d1b4b166205e14e/"
 CLANKER_API = "https://api.clanker.xyz"
+UNISWAP_V3_ROUTER = "0x5615CDAb10dc425a742d643d949a7F474C01abc4"  # Uniswap v3 router on Base
+WETH_ADDRESS = "0x4200000000000000000000000000000000000006"  # WETH on Base
 
 # Initialisation Web3
 w3 = Web3(Web3.HTTPProvider(QUICKNODE_RPC))
@@ -296,6 +298,36 @@ async def lastclanker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erreur lors de la récupération du dernier Clanker : {str(e)}")
 
+async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /testswap <token_address> <amount_weth> : effectue un swap WETH -> token sur Uniswap v3 (Base)"""
+    try:
+        if len(context.args) != 2:
+            await update.message.reply_text("Usage: /testswap <token_address> <amount_weth>")
+            return
+        token_address = context.args[0]
+        amount_weth = float(context.args[1])
+        if amount_weth <= 0:
+            await update.message.reply_text("Le montant doit être supérieur à 0")
+            return
+        # Conversion en wei
+        amount_in_wei = Web3.to_wei(amount_weth, 'ether')
+        # Appel de la fonction de swap (à implémenter dans clanker.py ou ici)
+        try:
+            tx_hash = sniper.swap_weth_for_token(
+                router_address=UNISWAP_V3_ROUTER,
+                weth_address=WETH_ADDRESS,
+                token_address=token_address,
+                amount_in_wei=amount_in_wei
+            )
+            if tx_hash:
+                await update.message.reply_text(f"✅ Swap envoyé !\nTx hash : https://basescan.org/tx/{tx_hash}")
+            else:
+                await update.message.reply_text("❌ Erreur lors de l'envoi du swap (aucun hash retourné)")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erreur lors du swap : {str(e)}")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur de parsing : {str(e)}")
+
 async def post_init(application):
     # Démarrage du monitoring global en arrière-plan une fois l'application prête
     asyncio.create_task(monitor_new_tokens_task(application))
@@ -313,6 +345,7 @@ def main():
     application.add_handler(CommandHandler("remove", remove_snipe))
     application.add_handler(CommandHandler("update", update_snipe))
     application.add_handler(CommandHandler("lastclanker", lastclanker))
+    application.add_handler(CommandHandler("testswap", testswap))
 
     logger.info("Handlers configurés, démarrage du polling...")
 
