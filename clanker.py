@@ -41,15 +41,26 @@ class ClankerSniper:
         self.ROUTER_ABI = [
             {
                 "inputs": [
-                    {"internalType": "address", "name": "tokenIn", "type": "address"},
-                    {"internalType": "address", "name": "tokenOut", "type": "address"},
-                    {"internalType": "uint24", "name": "fee", "type": "uint24"},
-                    {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
-                    {"internalType": "uint256", "name": "amountOutMinimum", "type": "uint256"},
-                    {"internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160"}
+                    {
+                        "components": [
+                            {"internalType": "address", "name": "tokenIn", "type": "address"},
+                            {"internalType": "address", "name": "tokenOut", "type": "address"},
+                            {"internalType": "uint24", "name": "fee", "type": "uint24"},
+                            {"internalType": "address", "name": "recipient", "type": "address"},
+                            {"internalType": "uint256", "name": "deadline", "type": "uint256"},
+                            {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                            {"internalType": "uint256", "name": "amountOutMinimum", "type": "uint256"},
+                            {"internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160"}
+                        ],
+                        "internalType": "struct ISwapRouter.ExactInputSingleParams",
+                        "name": "params",
+                        "type": "tuple"
+                    }
                 ],
                 "name": "exactInputSingle",
-                "outputs": [{"internalType": "uint256", "name": "amountOut", "type": "uint256"}],
+                "outputs": [
+                    {"internalType": "uint256", "name": "amountOut", "type": "uint256"}
+                ],
                 "stateMutability": "payable",
                 "type": "function"
             }
@@ -151,14 +162,17 @@ class ClankerSniper:
             router = self.w3.eth.contract(address=router_address, abi=self.ROUTER_ABI)
             # Approve WETH if needed
             self.approve_weth(amount_in_wei)
-            tx = router.functions.exactInputSingle(
-                weth_address,
-                token_address,
-                3000,  # 0.3% fee tier
-                amount_in_wei,
-                0,  # amountOutMinimum
-                0   # sqrtPriceLimitX96
-            ).build_transaction({
+            params = {
+                'tokenIn': weth_address,
+                'tokenOut': token_address,
+                'fee': 3000,
+                'recipient': self.address,
+                'deadline': self.w3.eth.get_block('latest').timestamp + 300,
+                'amountIn': amount_in_wei,
+                'amountOutMinimum': 0,
+                'sqrtPriceLimitX96': 0
+            }
+            tx = router.functions.exactInputSingle(params).build_transaction({
                 'from': self.address,
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price,
