@@ -314,4 +314,38 @@ class ClankerSniper:
 
         except Exception as e:
             print(f"Erreur détaillée lors du swap ETH -> token: {str(e)}")
-            return str(e) 
+            return str(e)
+
+    def check_pool_exists(self, token_address, amount_in_wei=10**15):
+        """
+        Vérifie si une pool Uniswap V3 WETH/token existe et a de la liquidité.
+        Retourne True si la pool existe et amountOut > 0, False sinon.
+        """
+        try:
+            quoter_abi = [{
+                "inputs": [
+                    {"internalType": "address", "name": "tokenIn", "type": "address"},
+                    {"internalType": "address", "name": "tokenOut", "type": "address"},
+                    {"internalType": "uint24", "name": "fee", "type": "uint24"},
+                    {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                    {"internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160"}
+                ],
+                "name": "quoteExactInputSingle",
+                "outputs": [
+                    {"internalType": "uint256", "name": "amountOut", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }]
+            quoter = self.w3.eth.contract(address=self.UNISWAP_V3_QUOTER, abi=quoter_abi)
+            amount_out = quoter.functions.quoteExactInputSingle(
+                self.WETH_ADDRESS,
+                token_address,
+                3000,
+                amount_in_wei,
+                0
+            ).call()
+            return amount_out > 0
+        except Exception as e:
+            print(f"[POOL CHECK] Erreur: {str(e)}")
+            return False 

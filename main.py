@@ -380,6 +380,13 @@ async def testswapeth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Conversion en wei
         amount_wei = Web3.to_wei(amount_eth, 'ether')
 
+        # Vérification de l'existence de la pool et de la liquidité
+        if not sniper.check_pool_exists(token_address, amount_wei):
+            await update.message.reply_text(
+                "❌ La pool Uniswap V3 WETH/token n'existe pas ou n'a pas de liquidité suffisante pour ce montant."
+            )
+            return
+
         # Message de début
         status_msg = await update.message.reply_text(
             f"🔄 Test d'achat de token avec {amount_eth} ETH...\n"
