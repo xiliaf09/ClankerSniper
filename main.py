@@ -27,6 +27,7 @@ QUICKNODE_RPC = "https://damp-necessary-frog.base-mainnet.quiknode.pro/d60be1af9
 CLANKER_API = "https://api.clanker.xyz"
 UNISWAP_V3_ROUTER = "0x5615CDAb10dc425a742d643d949a7F474C01abc4"  # Uniswap v3 router on Base
 WETH_ADDRESS = "0x4200000000000000000000000000000000000006"  # WETH on Base
+slippage = 100  # Slippage en %, 100% par défaut (minOut=0)
 
 # Initialisation Web3
 w3 = Web3(Web3.HTTPProvider(QUICKNODE_RPC))
@@ -298,8 +299,25 @@ async def lastclanker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erreur lors de la récupération du dernier Clanker : {str(e)}")
 
+async def slippage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /slippage <valeur> : ajuste le slippage global en pourcentage"""
+    global slippage
+    try:
+        if len(context.args) != 1:
+            await update.message.reply_text("Usage: /slippage <valeur_en_pourcentage>")
+            return
+        value = float(context.args[0])
+        if value <= 0 or value > 100:
+            await update.message.reply_text("Le slippage doit être entre 0 et 100")
+            return
+        slippage = value
+        await update.message.reply_text(f"Slippage global réglé à {slippage}%")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur lors du réglage du slippage : {str(e)}")
+
 async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande /testswap <token_address> <amount_weth> : effectue un swap WETH -> token sur Uniswap v3 (Base)"""
+    global slippage
     try:
         if len(context.args) != 2:
             await update.message.reply_text("Usage: /testswap <token_address> <amount_weth>")
@@ -309,15 +327,19 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if amount_weth <= 0:
             await update.message.reply_text("Le montant doit être supérieur à 0")
             return
-        # Conversion en wei
         amount_in_wei = Web3.to_wei(amount_weth, 'ether')
-        # Appel de la fonction de swap (à implémenter dans clanker.py ou ici)
+        # Estimation du minOut via le Quoter Uniswap
+        try:
+            min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
+        except Exception as e:
+            min_out = 0
         try:
             tx_hash = sniper.swap_weth_for_token(
                 router_address=UNISWAP_V3_ROUTER,
                 weth_address=WETH_ADDRESS,
                 token_address=token_address,
-                amount_in_wei=amount_in_wei
+                amount_in_wei=amount_in_wei,
+                min_out=min_out
             )
             if tx_hash:
                 await update.message.reply_text(f"✅ Swap envoyé !\nTx hash : https://basescan.org/tx/{tx_hash}")
@@ -346,6 +368,7 @@ def main():
     application.add_handler(CommandHandler("update", update_snipe))
     application.add_handler(CommandHandler("lastclanker", lastclanker))
     application.add_handler(CommandHandler("testswap", testswap))
+    application.add_handler(CommandHandler("slippage", slippage_command))
 
     logger.info("Handlers configurés, démarrage du polling...")
 

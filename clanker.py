@@ -156,7 +156,39 @@ class ClankerSniper:
                             callback(token)
                 last_checked_block = current_block 
 
-    def swap_weth_for_token(self, router_address, weth_address, token_address, amount_in_wei):
+    def get_amount_out(self, weth_address, token_address, amount_in_wei, slippage):
+        """Utilise le Quoter Uniswap V3 pour estimer le minOut avec slippage"""
+        try:
+            quoter_abi = [{
+                "inputs": [
+                    {"internalType": "address", "name": "tokenIn", "type": "address"},
+                    {"internalType": "address", "name": "tokenOut", "type": "address"},
+                    {"internalType": "uint24", "name": "fee", "type": "uint24"},
+                    {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                    {"internalType": "uint160", "name": "sqrtPriceLimitX96", "type": "uint160"}
+                ],
+                "name": "quoteExactInputSingle",
+                "outputs": [
+                    {"internalType": "uint256", "name": "amountOut", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }]
+            quoter = self.w3.eth.contract(address=self.UNISWAP_V3_QUOTER, abi=quoter_abi)
+            amount_out = quoter.functions.quoteExactInputSingle(
+                weth_address,
+                token_address,
+                3000,
+                amount_in_wei,
+                0
+            ).call()
+            min_out = int(amount_out * (1 - slippage / 100))
+            return min_out
+        except Exception as e:
+            print(f"Erreur get_amount_out: {str(e)}")
+            return 0
+
+    def swap_weth_for_token(self, router_address, weth_address, token_address, amount_in_wei, min_out=0):
         """Effectue un swap WETH -> token via Uniswap v3 (exactInputSingle), retourne le hash de la transaction."""
         try:
             router = self.w3.eth.contract(address=router_address, abi=self.ROUTER_ABI)
@@ -169,7 +201,7 @@ class ClankerSniper:
                 'recipient': self.address,
                 'deadline': self.w3.eth.get_block('latest').timestamp + 300,
                 'amountIn': amount_in_wei,
-                'amountOutMinimum': 0,
+                'amountOutMinimum': min_out,
                 'sqrtPriceLimitX96': 0
             }
             tx = router.functions.exactInputSingle(params).build_transaction({
