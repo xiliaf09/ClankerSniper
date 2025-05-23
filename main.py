@@ -35,6 +35,9 @@ sniper = ClankerSniper(QUICKNODE_RPC, PRIVATE_KEY)
 # Structure pour stocker les snipe en attente
 active_snipes = {}
 
+# Nouvelle structure pour suivre les tokens déjà alertés
+alerted_tokens = set()
+
 async def notify_user(context, user_id, message):
     """Envoie une notification à l'utilisateur"""
     try:
@@ -103,6 +106,43 @@ async def monitor_tokens_task(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Erreur dans la boucle de monitoring: {str(e)}")
             await asyncio.sleep(5)
+
+async def monitor_new_tokens_task(context: ContextTypes.DEFAULT_TYPE):
+    """Tâche de fond pour monitorer les nouveaux tokens déployés sur Clanker"""
+    logger.info("Démarrage du monitoring global des nouveaux tokens...")
+    while True:
+        try:
+            # Appel à l'API Clanker pour récupérer les nouveaux tokens
+            response = requests.get(f"{CLANKER_API}/tokens/new")
+            if response.status_code == 200:
+                tokens = response.json()
+                for token in tokens:
+                    token_id = token.get('address')
+                    if token_id and token_id not in alerted_tokens:
+                        alerted_tokens.add(token_id)
+                        # Préparer le message d'alerte
+                        nom = token.get('name', 'N/A')
+                        ticker = token.get('symbol', 'N/A')
+                        fid = token.get('fid', 'N/A')
+                        contract = token.get('address', 'N/A')
+                        pool = token.get('pool_address', 'N/A')
+                        message = (
+                            f"🚨 Nouveau token déployé !\n"
+                            f"Nom : {nom}\n"
+                            f"Ticker : {ticker}\n"
+                            f"FID : {fid}\n"
+                            f"Contract : {contract}\n"
+                            f"Pool : {pool}"
+                        )
+                        # Envoyer l'alerte à tous les utilisateurs ayant interagi avec le bot
+                        for snipe in active_snipes.values():
+                            user_id = snipe['user_id']
+                            await notify_user(context, user_id, message)
+            else:
+                logger.error(f"Erreur lors de la récupération des nouveaux tokens : {response.status_code}")
+        except Exception as e:
+            logger.error(f"Erreur dans la boucle de monitoring global : {str(e)}")
+        await asyncio.sleep(1)  # Vérification toutes les secondes
 
 # Commandes du bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -225,9 +265,9 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Format invalide pour la commande /update de l'utilisateur {update.effective_user.id}")
 
 async def post_init(application):
-    # Démarrage du monitoring en arrière-plan une fois l'application prête
-    asyncio.create_task(monitor_tokens_task(application))
-    logger.info("Monitoring des tokens lancé via post_init.")
+    # Démarrage du monitoring global en arrière-plan une fois l'application prête
+    asyncio.create_task(monitor_new_tokens_task(application))
+    logger.info("Monitoring global des nouveaux tokens lancé via post_init.")
 
 def main():
     logger.info("Démarrage du bot...")
