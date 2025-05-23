@@ -151,17 +151,14 @@ class ClankerSniper:
             router = self.w3.eth.contract(address=router_address, abi=self.ROUTER_ABI)
             # Approve WETH if needed
             self.approve_weth(amount_in_wei)
-            params = {
-                'tokenIn': weth_address,
-                'tokenOut': token_address,
-                'fee': 3000,  # 0.3% fee tier
-                'amountIn': amount_in_wei,
-                'amountOutMinimum': 0,  # Attention: Risque de slippage
-                'sqrtPriceLimitX96': 0,
-                'recipient': self.address,
-                'deadline': self.w3.eth.get_block('latest').timestamp + 300
-            }
-            tx = router.functions.exactInputSingle(params).build_transaction({
+            tx = router.functions.exactInputSingle(
+                weth_address,
+                token_address,
+                3000,  # 0.3% fee tier
+                amount_in_wei,
+                0,  # amountOutMinimum
+                0   # sqrtPriceLimitX96
+            ).build_transaction({
                 'from': self.address,
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price,
