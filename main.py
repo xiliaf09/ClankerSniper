@@ -196,8 +196,9 @@ async def update_snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("Format invalide. Usage: /update <FID> <nouveau_montant>")
 
-async def main():
+def main():
     """Fonction principale"""
+    # Création de l'application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Ajout des handlers
@@ -209,10 +210,10 @@ async def main():
     application.add_handler(CommandHandler("update", update_snipe))
 
     # Démarrage du monitoring en arrière-plan
-    asyncio.create_task(monitor_tokens_task(application))
+    application.create_task(monitor_tokens_task(application))
 
     # Démarrage du bot
-    await application.run_polling()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    asyncio.run(main()) 
+    main() 
