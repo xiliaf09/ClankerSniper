@@ -1,0 +1,10 @@
+{
+  "name": "clankersniper-bot",
+  "version": "1.0.0",
+  "description": "Bot Telegram Uniswap V3 buy via ethers.js",
+  "main": "buy.js",
+  "dependencies": {
+    "ethers": "^6.10.0",
+    "dotenv": "^16.4.5"
+  }
+} 
