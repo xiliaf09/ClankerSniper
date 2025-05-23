@@ -350,6 +350,36 @@ async def testswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erreur de parsing : {str(e)}")
 
+async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /quote <token_address> <amount_weth> : affiche le minOut estimé et le montant reçu attendu pour diagnostiquer le swap"""
+    global slippage
+    try:
+        if len(context.args) != 2:
+            await update.message.reply_text("Usage: /quote <token_address> <amount_weth>")
+            return
+        token_address = context.args[0]
+        amount_weth = float(context.args[1])
+        if amount_weth <= 0:
+            await update.message.reply_text("Le montant doit être supérieur à 0")
+            return
+        amount_in_wei = Web3.to_wei(amount_weth, 'ether')
+        try:
+            min_out = sniper.get_amount_out(WETH_ADDRESS, token_address, amount_in_wei, slippage)
+            if min_out == 0:
+                await update.message.reply_text("⚠️ Le Quoter Uniswap retourne 0 : la pool n'existe pas, n'a pas de liquidité, ou le montant est trop faible.")
+                return
+            amount_out = int(min_out / (1 - slippage / 100))
+            await update.message.reply_text(
+                f"Estimation Uniswap V3 :\n"
+                f"- Montant reçu attendu (avant slippage) : {amount_out} (wei)\n"
+                f"- minOut utilisé avec slippage ({slippage}%) : {min_out} (wei)\n"
+                f"- minOut (en token) : {Web3.from_wei(min_out, 'ether')}"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"Erreur lors de l'estimation du minOut : {str(e)}")
+    except Exception as e:
+        await update.message.reply_text(f"Erreur de parsing : {str(e)}")
+
 async def post_init(application):
     # Démarrage du monitoring global en arrière-plan une fois l'application prête
     asyncio.create_task(monitor_new_tokens_task(application))
@@ -369,6 +399,7 @@ def main():
     application.add_handler(CommandHandler("lastclanker", lastclanker))
     application.add_handler(CommandHandler("testswap", testswap))
     application.add_handler(CommandHandler("slippage", slippage_command))
+    application.add_handler(CommandHandler("quote", quote))
 
     logger.info("Handlers configurés, démarrage du polling...")
 
