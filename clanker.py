@@ -551,8 +551,8 @@ async def buy_token(update: Update, context: CallbackContext):
     except Exception as e:
         await update.message.reply_text(f"❌ Erreur : {str(e)}")
 
-# Dictionnaire pour stocker les snipes actifs
-active_snipes = {}
+# Dictionnaire pour stocker les prebuys actifs
+prebuys = {}
 last_token_id = None
 
 # Monitoring des nouveaux tokens Clanker
@@ -568,10 +568,10 @@ async def monitor_new_clankers(app):
                     if latest["id"] != last_token_id:
                         last_token_id = latest["id"]
                         fid = str(latest.get("requestor_fid"))
-                        if fid in active_snipes:
-                            snipe = active_snipes[fid]
-                            user_id = snipe["user_id"]
-                            amount_eth = snipe["amount_eth"]
+                        if fid in prebuys:
+                            prebuy = prebuys[fid]
+                            user_id = prebuy["user_id"]
+                            amount_eth = prebuy["amount_eth"]
                             # Message Telegram
                             await app.bot.send_message(
                                 chat_id=user_id,
@@ -581,7 +581,7 @@ async def monitor_new_clankers(app):
                                      f"Contract: {latest.get('contract_address')}\n"
                                      f"Pool: {latest.get('pool_address')}\n"
                                      f"Montant: {amount_eth} ETH\n"
-                                     f"Déclenchement du snipe..."
+                                     f"Déclenchement du prebuy..."
                             )
                             # Achat automatique
                             await buy_token_auto(app, user_id, latest["contract_address"], amount_eth)
@@ -606,10 +606,10 @@ async def buy_token_auto(app, user_id, token_address, amount_eth):
     fake_context = FakeContext(token_address, amount_eth)
     await buy_token(fake_update, fake_context)
 
-# Commande /snipe <FID> <amount en eth>
-async def snipe_command(update: Update, context: CallbackContext):
+# Commande /prebuy <FID> <amount en eth>
+async def prebuy_command(update: Update, context: CallbackContext):
     if len(context.args) != 2:
-        await update.message.reply_text("❌ Format : /snipe <FID> <montant_eth>")
+        await update.message.reply_text("❌ Format : /prebuy <FID> <montant_eth>")
         return
     fid = context.args[0]
     try:
@@ -618,12 +618,12 @@ async def snipe_command(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Montant ETH invalide")
         return
     user_id = update.effective_user.id
-    active_snipes[fid] = {"amount_eth": amount_eth, "user_id": user_id}
-    await update.message.reply_text(f"✅ Snipe activé pour FID {fid} avec {amount_eth} ETH.")
+    prebuys[fid] = {"amount_eth": amount_eth, "user_id": user_id}
+    await update.message.reply_text(f"✅ Prebuy activé pour FID {fid} avec {amount_eth} ETH.")
 
 # Ajout du handler dans la fonction de démarrage du bot
 # (à placer dans la fonction main ou équivalent)
-# application.add_handler(CommandHandler("snipe", snipe_command))
+# application.add_handler(CommandHandler("prebuy", prebuy_command))
 
 # Démarrage du monitoring dans un thread séparé au lancement du bot
 # (à placer dans la fonction main ou équivalent)
@@ -646,7 +646,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 Bienvenue sur ClankerSniper Bot !\n\n"
         "Commandes disponibles :\n"
         "/buy <adresse_token> <montant_eth> - Acheter un token\n"
-        "/snipe <FID> <montant_eth> - Snipe auto sur FID\n"
+        "/prebuy <FID> <montant_eth> - Snipe auto sur FID\n"
         "/help - Afficher l'aide"
     )
 
@@ -657,8 +657,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "   /buy <adresse_token> <montant_eth>\n"
         "   Exemple : /buy 0x123... 0.1\n\n"
         "2. Pour snip auto un FID :\n"
-        "   /snipe <FID> <montant_eth>\n"
-        "   Exemple : /snipe 123456 0.1\n\n"
+        "   /prebuy <FID> <montant_eth>\n"
+        "   Exemple : /prebuy 123456 0.1\n\n"
         "Le bot surveille automatiquement les nouveaux tokens Clanker et déclenche un achat si un snipe est configuré pour le FID concerné."
     )
 
@@ -680,7 +680,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("buy", buy_token))
-    application.add_handler(CommandHandler("snipe", snipe_command))
+    application.add_handler(CommandHandler("prebuy", prebuy_command))
     application.add_error_handler(error_handler)
     # Démarrage du monitoring asynchrone
     application.post_init = lambda app: asyncio.create_task(monitor_new_clankers(app))
