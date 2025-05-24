@@ -11,6 +11,7 @@ import threading
 import asyncio
 import logging
 from dotenv import load_dotenv
+from flask import Flask, request, jsonify
 
 AUTHORIZED_IDS = {123456789}  # Remplace 123456789 par ton user_id Telegram, ajoute l'ID du bot Discord plus tard
 
@@ -735,6 +736,42 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if hasattr(error, 'data'):
             error_message += f"\n\nDétails : {error.data}"
         await update.effective_message.reply_text(error_message)
+
+# --- Webhook HTTP pour achat automatisé ---
+flask_app = Flask(__name__)
+
+@flask_app.route('/buy_webhook', methods=['POST'])
+def buy_webhook():
+    data = request.json
+    token_address = data.get('token_address')
+    amount_eth = data.get('amount_eth')
+    if not token_address or not amount_eth:
+        return jsonify({'status': 'error', 'message': 'token_address et amount_eth requis'}), 400
+    try:
+        # Appel direct à la logique d'achat (hors Telegram)
+        # On crée un faux update/context pour réutiliser buy_token
+        class FakeMessage:
+            def __init__(self):
+                self.chat_id = None
+            async def reply_text(self, text, **kwargs):
+                print(f"[WEBHOOK] {text}")
+        class FakeUpdate:
+            def __init__(self):
+                self.message = FakeMessage()
+        class FakeContext:
+            def __init__(self, token_address, amount_eth):
+                self.args = [token_address, str(amount_eth)]
+        import asyncio
+        asyncio.run(buy_token(FakeUpdate(), FakeContext(token_address, amount_eth)))
+        return jsonify({'status': 'ok', 'message': 'Achat déclenché'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=5000)
+
+# --- Démarrage du serveur Flask en thread ---
+threading.Thread(target=run_flask, daemon=True).start()
 
 def main():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
