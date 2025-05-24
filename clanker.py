@@ -253,8 +253,8 @@ class ClankerSniper:
 
     def swap_eth_for_token(self, token_address, amount_in_wei, min_out=0):
         """
-        Effectue un swap ETH natif -> token via Uniswap V3 (exactInputSingle), sans simulation préalable.
-        Envoie la transaction directement, comme Metamask.
+        Effectue un swap ETH natif -> token via Uniswap V3 (exactInputSingle).
+        Vérifie d'abord la liquidité des pools et utilise le meilleur fee tier.
         """
         try:
             # 1. Vérification du solde ETH
@@ -262,39 +262,107 @@ class ClankerSniper:
             if eth_balance < amount_in_wei:
                 raise Exception(f"Solde ETH insuffisant: {Web3.from_wei(eth_balance, 'ether')} ETH < {Web3.from_wei(amount_in_wei, 'ether')} ETH requis")
 
-            # 2. Construction des paramètres du swap (tuple)
-            params = (
-                self.WETH_ADDRESS,      # tokenIn
-                token_address,         # tokenOut
-                3000,                  # fee
-                self.address,          # recipient
-                int(time.time()) + 300,# deadline
-                amount_in_wei,         # amountIn
-                min_out,               # amountOutMinimum
-                0                      # sqrtPriceLimitX96
+            # 2. Vérification des pools pour chaque fee tier
+            fee_tiers = [500, 3000, 10000]  # 0.05%, 0.3%, 1%
+            best_pool = None
+            best_liquidity = 0
+
+            factory_contract = self.w3.eth.contract(
+                address="0x33128a8fC17869897dcE68Ed026d694621f6FDfD",  # Uniswap V3 Factory
+                abi=[{
+                    "inputs": [
+                        {"internalType": "address", "name": "tokenA", "type": "address"},
+                        {"internalType": "address", "name": "tokenB", "type": "address"},
+                        {"internalType": "uint24", "name": "fee", "type": "uint24"}
+                    ],
+                    "name": "getPool",
+                    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                }]
             )
 
-            # 3. Construction et envoi de la transaction (PAS DE SIMULATION)
+            for fee in fee_tiers:
+                try:
+                    pool_address = factory_contract.functions.getPool(
+                        self.WETH_ADDRESS,
+                        token_address,
+                        fee
+                    ).call()
+
+                    if pool_address != "0x0000000000000000000000000000000000000000":
+                        # Vérifier la liquidité
+                        pool_contract = self.w3.eth.contract(
+                            address=pool_address,
+                            abi=[{
+                                "inputs": [],
+                                "name": "liquidity",
+                                "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
+                                "stateMutability": "view",
+                                "type": "function"
+                            }]
+                        )
+                        liquidity = pool_contract.functions.liquidity().call()
+                        
+                        if liquidity > best_liquidity:
+                            best_liquidity = liquidity
+                            best_pool = (fee, pool_address)
+                except Exception as e:
+                    print(f"Erreur lors de la vérification du pool {fee/10000}%: {str(e)}")
+                    continue
+
+            if not best_pool:
+                raise Exception("Aucun pool avec liquidité trouvé")
+
+            # 3. Construction des paramètres du swap
+            params = {
+                'tokenIn': self.WETH_ADDRESS,
+                'tokenOut': token_address,
+                'fee': best_pool[0],
+                'recipient': self.address,
+                'deadline': int(time.time()) + 300,
+                'amountIn': amount_in_wei,
+                'amountOutMinimum': min_out,
+                'sqrtPriceLimitX96': 0
+            }
+
+            # 4. Simulation de la transaction
+            try:
+                self.router_contract.functions.exactInputSingle(params).call({
+                    'from': self.address,
+                    'value': amount_in_wei
+                })
+            except Exception as e:
+                raise Exception(f"Échec de la simulation du swap: {str(e)}")
+
+            # 5. Construction et envoi de la transaction
             tx = self.router_contract.functions.exactInputSingle(params).build_transaction({
                 'from': self.address,
-                'value': amount_in_wei,  # ETH natif envoyé
-                'gas': 300000,           # Gas limit suffisant
-                'gasPrice': self.w3.eth.gas_price,
+                'value': amount_in_wei,
+                'gas': 500000,  # Gas limit plus élevé pour plus de sécurité
+                'maxFeePerGas': int(self.w3.eth.get_block('latest').baseFeePerGas * 2.5 + self.w3.eth.max_priority_fee),
+                'maxPriorityFeePerGas': self.w3.eth.max_priority_fee,
                 'nonce': self.w3.eth.get_transaction_count(self.address),
+                'chainId': 8453  # Base Mainnet
             })
 
-            # 4. Signature et envoi
+            # 6. Signature et envoi
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
             
-            # 5. Attente de la confirmation
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            # 6. Vérification du statut
-            if receipt['status'] == 0:
-                raise Exception(f"Transaction échouée on-chain. Voir https://basescan.org/tx/{tx_hash.hex()}")
-            
-            return tx_hash.hex()
+            # 7. Attente de la confirmation avec retry
+            max_retries = 3
+            for i in range(max_retries):
+                try:
+                    receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                    if receipt['status'] == 1:
+                        return tx_hash.hex()
+                    else:
+                        raise Exception(f"Transaction échouée. Voir https://basescan.org/tx/{tx_hash.hex()}")
+                except Exception as e:
+                    if i == max_retries - 1:
+                        raise Exception(f"Échec de la confirmation après {max_retries} tentatives: {str(e)}")
+                    time.sleep(2 ** i)  # Backoff exponentiel
 
         except Exception as e:
             print(f"Erreur détaillée lors du swap ETH -> token: {str(e)}")
