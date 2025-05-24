@@ -12,6 +12,8 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 
+AUTHORIZED_IDS = {123456789}  # Remplace 123456789 par ton user_id Telegram, ajoute l'ID du bot Discord plus tard
+
 class ClankerSniper:
     def __init__(self, rpc_url, private_key):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -410,6 +412,10 @@ class ClankerSniper:
             return False
 
 async def buy_token(update: Update, context: CallbackContext):
+    print(f"Commande /buy reçue de user_id: {update.effective_user.id}")
+    if update.effective_user.id not in AUTHORIZED_IDS:
+        await update.message.reply_text("⛔️ Non autorisé.")
+        return
     """Commande /buy : achat/swap Uniswap V3 fee 1% (logique robuste, RPC Railway, gestion Telegram asynchrone)"""
     try:
         if len(context.args) != 2:
