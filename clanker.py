@@ -438,6 +438,7 @@ async def buy_token(update: Update, context: CallbackContext):
             return
         # Setup Web3
         rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
+        print(f"[DEBUG] RPC URL utilisée : {rpc_url}")
         w3 = Web3(Web3.HTTPProvider(rpc_url))
         private_key = os.getenv("PRIVATE_KEY")
         if not private_key:
