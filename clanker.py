@@ -540,6 +540,7 @@ async def buy_token(update: Update, context: CallbackContext):
             # Utilisateur a spécifié un gas fee personnalisé (en ETH)
             max_fee_per_gas = int(w3.to_wei(gas_fees_eth, 'ether'))
         else:
+            # Calcul automatique sans limite
             max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
         tx = router.functions.exactInput(params).build_transaction({
             'chainId': 8453,
