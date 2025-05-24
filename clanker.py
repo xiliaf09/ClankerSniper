@@ -414,12 +414,10 @@ class ClankerSniper:
 
 async def buy_token(update: Update, context: CallbackContext):
     print(f"Commande /buy reçue de user_id: {update.effective_user.id}")
-    # Plus de filtrage d'ID, toute commande /buy est acceptée
-    """Commande /buy : achat/swap Uniswap V3 fee 1% (logique robuste, RPC Railway, gestion Telegram asynchrone)"""
     try:
-        if len(context.args) != 2:
+        if len(context.args) not in [2, 3]:
             await update.message.reply_text(
-                "❌ Format incorrect\nUtilisation : /buy <adresse_token> <montant_eth>\nExemple : /buy 0x123... 0.1"
+                "❌ Format incorrect\nUtilisation : /buy <adresse_token> <montant_eth> [<gas_fees_eth>]\nExemple : /buy 0x123... 0.1 0.00000005"
             )
             return
         token_address = context.args[0]
@@ -428,6 +426,13 @@ async def buy_token(update: Update, context: CallbackContext):
         except ValueError:
             await update.message.reply_text("❌ Le montant doit être un nombre valide")
             return
+        gas_fees_eth = None
+        if len(context.args) == 3:
+            try:
+                gas_fees_eth = float(context.args[2])
+            except ValueError:
+                await update.message.reply_text("❌ Le gas fees doit être un nombre valide (en ETH)")
+                return
         if not Web3.is_address(token_address):
             await update.message.reply_text("❌ Adresse de token invalide")
             return
@@ -531,7 +536,11 @@ async def buy_token(update: Update, context: CallbackContext):
         nonce = w3.eth.get_transaction_count(address)
         base_fee = w3.eth.get_block('latest').baseFeePerGas
         priority_fee = w3.eth.max_priority_fee
-        max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
+        if gas_fees_eth is not None:
+            # Utilisateur a spécifié un gas fee personnalisé (en ETH)
+            max_fee_per_gas = int(w3.to_wei(gas_fees_eth, 'ether'))
+        else:
+            max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
         tx = router.functions.exactInput(params).build_transaction({
             'chainId': 8453,
             'gas': 500000,
