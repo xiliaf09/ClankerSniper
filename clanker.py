@@ -442,7 +442,7 @@ async def buy_token(update: Update, context: CallbackContext):
         w3 = Web3(Web3.HTTPProvider(rpc_url))
         private_key = os.getenv("PRIVATE_KEY")
         if not private_key:
-            await update.message.reply_text("❌ Clé privée manquante dans Railway")
+            await update.message.reply_text(f"❌ Clé privée manquante dans Railway\n(RPC utilisé : {rpc_url})")
             return
         account = Account.from_key(private_key)
         address = account.address
@@ -452,7 +452,7 @@ async def buy_token(update: Update, context: CallbackContext):
         await update.message.reply_text(f"💰 Solde actuel : {balance_eth:.4f} ETH\n🎯 Montant à acheter : {amount_eth:.4f} ETH")
         amount_wei = w3.to_wei(amount_eth, 'ether')
         if balance < amount_wei:
-            await update.message.reply_text(f"❌ Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
+            await update.message.reply_text(f"❌ Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH\n(RPC utilisé : {rpc_url})")
             return
         # Recherche pool fee 1% dans les deux sens
         FACTORY = w3.to_checksum_address("0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
@@ -485,7 +485,7 @@ async def buy_token(update: Update, context: CallbackContext):
                 direction = 'TOKEN_TO_WETH'
                 pool = pool_addr
         if not pool:
-            await update.message.reply_text("❌ Pas de pool 1% trouvée dans les deux sens.")
+            await update.message.reply_text(f"❌ Pas de pool 1% trouvée dans les deux sens.\n(RPC utilisé : {rpc_url})")
             return
         # Vérif liquidité
         pool_abi = [
@@ -494,7 +494,7 @@ async def buy_token(update: Update, context: CallbackContext):
         pool_contract = w3.eth.contract(address=pool, abi=pool_abi)
         liquidity = pool_contract.functions.liquidity().call()
         if liquidity == 0:
-            await update.message.reply_text(f"❌ Pool trouvée ({pool}) mais pas de liquidité.")
+            await update.message.reply_text(f"❌ Pool trouvée ({pool}) mais pas de liquidité.\n(RPC utilisé : {rpc_url})")
             return
         await update.message.reply_text(f"✅ Pool trouvée : {pool}\n💧 Liquidité : {liquidity}")
         # Construction du path Uniswap V3 (toujours WETH -> token)
@@ -543,29 +543,32 @@ async def buy_token(update: Update, context: CallbackContext):
         else:
             # Calcul automatique sans limite
             max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
-        tx = router.functions.exactInput(params).build_transaction({
-            'chainId': 8453,
-            'gas': 500000,
-            'maxFeePerGas': max_fee_per_gas,
-            'maxPriorityFeePerGas': priority_fee,
-            'nonce': nonce,
-            'value': amount_wei,
-            'from': address
-        })
-        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-        tx_link = f"https://basescan.org/tx/{tx_hash.hex()}"
-        await update.message.reply_text(f"✅ Transaction envoyée !\nHash : `{tx_hash.hex()}`\n🔍 [Voir sur Basescan]({tx_link})", parse_mode='Markdown')
         try:
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-            if receipt.status == 1:
-                await update.message.reply_text("✅ Transaction confirmée avec succès!")
-            else:
-                await update.message.reply_text("❌ La transaction a échoué")
+            tx = router.functions.exactInput(params).build_transaction({
+                'chainId': 8453,
+                'gas': 500000,
+                'maxFeePerGas': max_fee_per_gas,
+                'maxPriorityFeePerGas': priority_fee,
+                'nonce': nonce,
+                'value': amount_wei,
+                'from': address
+            })
+            signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            tx_link = f"https://basescan.org/tx/{tx_hash.hex()}"
+            await update.message.reply_text(f"✅ Transaction envoyée !\nHash : `{tx_hash.hex()}`\n🔍 [Voir sur Basescan]({tx_link})", parse_mode='Markdown')
+            try:
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                if receipt.status == 1:
+                    await update.message.reply_text("✅ Transaction confirmée avec succès!")
+                else:
+                    await update.message.reply_text(f"❌ La transaction a échoué\n(RPC utilisé : {rpc_url})")
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ Timeout en attendant la confirmation.\nVérifiez le statut sur Basescan : [Voir transaction]({tx_link})\n(RPC utilisé : {rpc_url})", parse_mode='Markdown')
         except Exception as e:
-            await update.message.reply_text(f"⚠️ Timeout en attendant la confirmation.\nVérifiez le statut sur Basescan : [Voir transaction]({tx_link})", parse_mode='Markdown')
+            await update.message.reply_text(f"❌ Erreur : {str(e)}\n(RPC utilisé : {rpc_url})")
     except Exception as e:
-        await update.message.reply_text(f"❌ Erreur : {str(e)}")
+        await update.message.reply_text(f"❌ Erreur : {str(e)}\n(RPC utilisé : {rpc_url})")
 
 # Dictionnaire pour stocker les prebuys actifs
 prebuys = {}
