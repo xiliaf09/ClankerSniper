@@ -4,6 +4,9 @@ from web3 import Web3
 from eth_account import Account
 from web3.middleware import geth_poa_middleware
 import time
+import os
+from telegram import Update
+from telegram.ext import CallbackContext
 
 class ClankerSniper:
     def __init__(self, rpc_url, private_key):
@@ -400,4 +403,72 @@ class ClankerSniper:
             return amount_out > 0
         except Exception as e:
             print(f"[POOL CHECK] Erreur: {str(e)}")
-            return False 
+            return False
+
+def buy_token(update: Update, context: CallbackContext):
+    """Gère la commande /buy pour acheter un token"""
+    try:
+        # Vérification des arguments
+        if len(context.args) != 2:
+            update.message.reply_text(
+                "❌ Format incorrect\n"
+                "Utilisation : /buy <adresse_token> <montant_eth>\n"
+                "Exemple : /buy 0x123... 0.1"
+            )
+            return
+
+        # Récupération des arguments
+        token_address = context.args[0]
+        try:
+            amount_eth = float(context.args[1])
+        except ValueError:
+            update.message.reply_text("❌ Le montant doit être un nombre valide")
+            return
+
+        # Vérification de l'adresse du token
+        if not Web3.is_address(token_address):
+            update.message.reply_text("❌ Adresse de token invalide")
+            return
+
+        # Conversion en wei
+        amount_wei = Web3.to_wei(amount_eth, 'ether')
+
+        # Création de l'instance ClankerSniper
+        sniper = ClankerSniper(
+            rpc_url="https://mainnet.base.org",
+            private_key=os.getenv("PRIVATE_KEY")
+        )
+
+        # Vérification du solde
+        balance = sniper.w3.eth.get_balance(sniper.address)
+        balance_eth = Web3.from_wei(balance, 'ether')
+        
+        update.message.reply_text(
+            f"💰 Solde actuel : {balance_eth:.4f} ETH\n"
+            f"🎯 Montant à acheter : {amount_eth:.4f} ETH"
+        )
+
+        if balance < amount_wei:
+            update.message.reply_text("❌ Solde insuffisant")
+            return
+
+        # Vérification de la liquidité
+        update.message.reply_text("🔍 Vérification de la liquidité...")
+        if not sniper.check_pool_exists(token_address):
+            update.message.reply_text("❌ Pas de pool avec liquidité trouvée")
+            return
+
+        # Exécution du swap
+        update.message.reply_text("🔄 Exécution du swap...")
+        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
+
+        if tx_hash:
+            update.message.reply_text(
+                f"✅ Swap exécuté avec succès !\n"
+                f"🔗 Transaction : https://basescan.org/tx/{tx_hash}"
+            )
+        else:
+            update.message.reply_text("❌ Échec du swap")
+
+    except Exception as e:
+        update.message.reply_text(f"❌ Erreur : {str(e)}") 
