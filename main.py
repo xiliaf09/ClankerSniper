@@ -43,11 +43,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Gère les erreurs du bot"""
-    logger.error("Exception while handling an update:", exc_info=context.error)
+    error = context.error
+    logger.error("Exception while handling an update:", exc_info=error)
+    
     if update and update.effective_message:
-        await update.effective_message.reply_text(
-            "❌ Une erreur est survenue. Veuillez réessayer plus tard."
-        )
+        error_message = f"❌ Erreur : {str(error)}"
+        if hasattr(error, 'message'):
+            error_message = f"❌ Erreur : {error.message}"
+        elif hasattr(error, 'args') and error.args:
+            error_message = f"❌ Erreur : {error.args[0]}"
+        
+        # Ajout des détails supplémentaires si disponibles
+        if hasattr(error, 'data'):
+            error_message += f"\n\nDétails : {error.data}"
+        
+        await update.effective_message.reply_text(error_message)
 
 def main():
     """Démarre le bot"""

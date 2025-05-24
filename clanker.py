@@ -405,30 +405,27 @@ class ClankerSniper:
             print(f"[POOL CHECK] Erreur: {str(e)}")
             return False
 
-def buy_token(update: Update, context: CallbackContext):
+async def buy_token(update: Update, context: CallbackContext):
     """Gère la commande /buy pour acheter un token"""
     try:
         # Vérification des arguments
         if len(context.args) != 2:
-            update.message.reply_text(
-                "❌ Format incorrect\n"
+            raise ValueError(
+                "Format incorrect\n"
                 "Utilisation : /buy <adresse_token> <montant_eth>\n"
                 "Exemple : /buy 0x123... 0.1"
             )
-            return
 
         # Récupération des arguments
         token_address = context.args[0]
         try:
             amount_eth = float(context.args[1])
         except ValueError:
-            update.message.reply_text("❌ Le montant doit être un nombre valide")
-            return
+            raise ValueError("Le montant doit être un nombre valide")
 
         # Vérification de l'adresse du token
         if not Web3.is_address(token_address):
-            update.message.reply_text("❌ Adresse de token invalide")
-            return
+            raise ValueError("Adresse de token invalide")
 
         # Conversion en wei
         amount_wei = Web3.to_wei(amount_eth, 'ether')
@@ -443,32 +440,31 @@ def buy_token(update: Update, context: CallbackContext):
         balance = sniper.w3.eth.get_balance(sniper.address)
         balance_eth = Web3.from_wei(balance, 'ether')
         
-        update.message.reply_text(
+        await update.message.reply_text(
             f"💰 Solde actuel : {balance_eth:.4f} ETH\n"
             f"🎯 Montant à acheter : {amount_eth:.4f} ETH"
         )
 
         if balance < amount_wei:
-            update.message.reply_text("❌ Solde insuffisant")
-            return
+            raise ValueError(f"Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
 
         # Vérification de la liquidité
-        update.message.reply_text("🔍 Vérification de la liquidité...")
+        await update.message.reply_text("🔍 Vérification de la liquidité...")
         if not sniper.check_pool_exists(token_address):
-            update.message.reply_text("❌ Pas de pool avec liquidité trouvée")
-            return
+            raise ValueError("Pas de pool avec liquidité trouvée")
 
         # Exécution du swap
-        update.message.reply_text("🔄 Exécution du swap...")
+        await update.message.reply_text("🔄 Exécution du swap...")
         tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
 
-        if tx_hash:
-            update.message.reply_text(
-                f"✅ Swap exécuté avec succès !\n"
-                f"🔗 Transaction : https://basescan.org/tx/{tx_hash}"
-            )
-        else:
-            update.message.reply_text("❌ Échec du swap")
+        if not tx_hash:
+            raise ValueError("Échec du swap - Aucun hash de transaction retourné")
+
+        await update.message.reply_text(
+            f"✅ Swap exécuté avec succès !\n"
+            f"🔗 Transaction : https://basescan.org/tx/{tx_hash}"
+        )
 
     except Exception as e:
-        update.message.reply_text(f"❌ Erreur : {str(e)}") 
+        # Propager l'erreur pour qu'elle soit gérée par le gestionnaire d'erreurs
+        raise 
