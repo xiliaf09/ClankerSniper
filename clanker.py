@@ -560,8 +560,8 @@ async def monitor_new_clankers(app):
     global last_token_id
     while True:
         try:
-            # Utiliser l'URL correcte de l'API Clanker
-            resp = requests.get("https://api.clanker.xyz/tokens?sort=desc&page=1")
+            # URL correcte selon la documentation officielle
+            resp = requests.get("https://www.clanker.world/api/tokens?sort=desc&page=1")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("data"):
@@ -575,7 +575,7 @@ async def monitor_new_clankers(app):
                             user_id = prebuy["user_id"]
                             amount_eth = prebuy["amount_eth"]
                             print(f"[MONITOR] Prebuy trouvé pour FID {fid}: {amount_eth} ETH")
-                            # Message Telegram
+                            # Message Telegram avec plus d'informations du token
                             await app.bot.send_message(
                                 chat_id=user_id,
                                 text=f"🎯 Nouveau token détecté pour FID {fid} :\n"
@@ -583,6 +583,9 @@ async def monitor_new_clankers(app):
                                      f"Symbole: {latest.get('symbol')}\n"
                                      f"Contract: {latest.get('contract_address')}\n"
                                      f"Pool: {latest.get('pool_address')}\n"
+                                     f"Type: {latest.get('type')}\n"
+                                     f"Pair: {latest.get('pair')}\n"
+                                     f"Market Cap: {latest.get('starting_market_cap')}\n"
                                      f"Montant: {amount_eth} ETH\n"
                                      f"Déclenchement du prebuy..."
                             )
