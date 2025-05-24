@@ -406,7 +406,7 @@ class ClankerSniper:
             return False
 
 async def buy_token(update: Update, context: CallbackContext):
-    """Gère la commande /buy pour acheter un token avec debug détaillé sur la recherche de pool/liquidité"""
+    """Gère la commande /buy pour acheter un token avec debug détaillé sur la recherche de pool/liquidité (fee 1% uniquement, RPC Railway)"""
     try:
         if len(context.args) != 2:
             raise ValueError(
@@ -425,8 +425,10 @@ async def buy_token(update: Update, context: CallbackContext):
             raise ValueError("Adresse de token invalide")
 
         amount_wei = Web3.to_wei(amount_eth, 'ether')
+        # Utilisation du RPC Railway
+        rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
         sniper = ClankerSniper(
-            rpc_url="https://mainnet.base.org",
+            rpc_url=rpc_url,
             private_key=os.getenv("PRIVATE_KEY")
         )
         balance = sniper.w3.eth.get_balance(sniper.address)
@@ -438,31 +440,30 @@ async def buy_token(update: Update, context: CallbackContext):
         if balance < amount_wei:
             raise ValueError(f"Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
 
-        await update.message.reply_text("🔍 Recherche des pools et de la liquidité...")
-        fee_tiers = [500, 3000, 10000]
+        await update.message.reply_text("🔍 Recherche de la pool 1% (fee 10000) et de la liquidité...")
+        fee = 10000
         debug_msgs = []
         found_pool = False
-        for fee in fee_tiers:
-            try:
-                # Recherche de la pool
-                factory_contract = sniper.w3.eth.contract(
-                    address="0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
-                    abi=[{
-                        "inputs": [
-                            {"internalType": "address", "name": "tokenA", "type": "address"},
-                            {"internalType": "address", "name": "tokenB", "type": "address"},
-                            {"internalType": "uint24", "name": "fee", "type": "uint24"}
-                        ],
-                        "name": "getPool",
-                        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                        "stateMutability": "view",
-                        "type": "function"
-                    }]
-                )
-                pool_address = factory_contract.functions.getPool(sniper.WETH_ADDRESS, token_address, fee).call()
-                if pool_address == "0x0000000000000000000000000000000000000000":
-                    debug_msgs.append(f"Fee {fee/10000:.2%} : ❌ Pas de pool trouvée.")
-                    continue
+        try:
+            # Recherche de la pool
+            factory_contract = sniper.w3.eth.contract(
+                address="0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+                abi=[{
+                    "inputs": [
+                        {"internalType": "address", "name": "tokenA", "type": "address"},
+                        {"internalType": "address", "name": "tokenB", "type": "address"},
+                        {"internalType": "uint24", "name": "fee", "type": "uint24"}
+                    ],
+                    "name": "getPool",
+                    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                }]
+            )
+            pool_address = factory_contract.functions.getPool(sniper.WETH_ADDRESS, token_address, fee).call()
+            if pool_address == "0x0000000000000000000000000000000000000000":
+                debug_msgs.append(f"Fee 1.00% : ❌ Pas de pool trouvée.")
+            else:
                 # Vérification de la liquidité
                 pool_contract = sniper.w3.eth.contract(
                     address=pool_address,
@@ -481,17 +482,17 @@ async def buy_token(update: Update, context: CallbackContext):
                     min_out = sniper.get_amount_out(sniper.WETH_ADDRESS, token_address, amount_wei, 0)
                 except Exception as e:
                     min_out = f"Erreur Quoter: {str(e)}"
-                debug_msgs.append(f"Fee {fee/10000:.2%} :\n  Pool: {pool_address}\n  Liquidité: {liquidity}\n  Estimation Quoter: {min_out}")
+                debug_msgs.append(f"Fee 1.00% :\n  Pool: {pool_address}\n  Liquidité: {liquidity}\n  Estimation Quoter: {min_out}")
                 if liquidity > 0 and isinstance(min_out, int) and min_out > 0:
                     found_pool = True
-            except Exception as e:
-                debug_msgs.append(f"Fee {fee/10000:.2%} : Erreur: {str(e)}")
+        except Exception as e:
+            debug_msgs.append(f"Fee 1.00% : Erreur: {str(e)}")
         await update.message.reply_text("\n\n".join(debug_msgs))
         if not found_pool:
-            raise ValueError("Aucune pool avec liquidité suffisante trouvée pour ce token.")
+            raise ValueError("Aucune pool 1% avec liquidité suffisante trouvée pour ce token.")
         # Exécution du swap si une pool valide a été trouvée
         await update.message.reply_text("🔄 Exécution du swap...")
-        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
+        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei, min_out if isinstance(min_out, int) else 0)
         if not tx_hash:
             raise ValueError("Échec du swap - Aucun hash de transaction retourné")
         await update.message.reply_text(
