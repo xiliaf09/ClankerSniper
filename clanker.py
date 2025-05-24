@@ -737,6 +737,130 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             error_message += f"\n\nDétails : {error.data}"
         await update.effective_message.reply_text(error_message)
 
+# Ajoute une fonction dédiée pour achat via webhook
+async def buy_token_webhook(token_address, amount_eth):
+    try:
+        # Setup Web3
+        rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        private_key = os.getenv("PRIVATE_KEY")
+        if not private_key:
+            print("❌ Clé privée manquante dans Railway")
+            return {"status": "error", "message": "Clé privée manquante"}
+        account = Account.from_key(private_key)
+        address = account.address
+        amount_wei = w3.to_wei(amount_eth, 'ether')
+        # Recherche pool fee 1% dans les deux sens
+        FACTORY = w3.to_checksum_address("0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
+        WETH = w3.to_checksum_address("0x4200000000000000000000000000000000000006")
+        FEE = 10000
+        factory_abi = [{
+            "inputs": [
+                {"internalType": "address", "name": "tokenA", "type": "address"},
+                {"internalType": "address", "name": "tokenB", "type": "address"},
+                {"internalType": "uint24", "name": "fee", "type": "uint24"}
+            ],
+            "name": "getPool",
+            "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+            "stateMutability": "view",
+            "type": "function"
+        }]
+        pool = None
+        direction = None
+        token = w3.to_checksum_address(token_address)
+        factory = w3.eth.contract(address=FACTORY, abi=factory_abi)
+        # Essai WETH -> token
+        pool_addr = factory.functions.getPool(WETH, token, FEE).call()
+        if pool_addr != "0x0000000000000000000000000000000000000000":
+            direction = 'WETH_TO_TOKEN'
+            pool = pool_addr
+        else:
+            # Essai token -> WETH
+            pool_addr = factory.functions.getPool(token, WETH, FEE).call()
+            if pool_addr != "0x0000000000000000000000000000000000000000":
+                direction = 'TOKEN_TO_WETH'
+                pool = pool_addr
+        if not pool:
+            print("❌ Pas de pool 1% trouvée dans les deux sens.")
+            return {"status": "error", "message": "Pas de pool 1% trouvée"}
+        # Vérif liquidité
+        pool_abi = [
+            {"inputs": [], "name": "liquidity", "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}], "stateMutability": "view", "type": "function"}
+        ]
+        pool_contract = w3.eth.contract(address=pool, abi=pool_abi)
+        liquidity = pool_contract.functions.liquidity().call()
+        if liquidity == 0:
+            print(f"❌ Pool trouvée ({pool}) mais pas de liquidité.")
+            return {"status": "error", "message": "Pool trouvée mais pas de liquidité"}
+        # Construction du path Uniswap V3 (toujours WETH -> token)
+        def encode_path(token_in, fee, token_out):
+            return bytes.fromhex(token_in[2:] + hex(fee)[2:].zfill(6) + token_out[2:])
+        if direction == 'WETH_TO_TOKEN':
+            path = encode_path(WETH, FEE, token)
+        else:
+            path = encode_path(token, FEE, WETH)
+        # Construction de la tx
+        router_addr = w3.to_checksum_address("0x2626664c2603336E57B271c5C0b26F421741e481")
+        router_abi = [
+            {
+                "inputs": [
+                    {
+                        "components": [
+                            {"internalType": "bytes", "name": "path", "type": "bytes"},
+                            {"internalType": "address", "name": "recipient", "type": "address"},
+                            {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                            {"internalType": "uint256", "name": "amountOutMinimum", "type": "uint256"}
+                        ],
+                        "internalType": "struct ISwapRouter.ExactInputParams",
+                        "name": "params",
+                        "type": "tuple"
+                    }
+                ],
+                "name": "exactInput",
+                "outputs": [{"internalType": "uint256", "name": "amountOut", "type": "uint256"}],
+                "stateMutability": "payable",
+                "type": "function"
+            }
+        ]
+        router = w3.eth.contract(address=router_addr, abi=router_abi)
+        params = {
+            'path': path,
+            'recipient': address,
+            'amountIn': amount_wei,
+            'amountOutMinimum': 0
+        }
+        nonce = w3.eth.get_transaction_count(address)
+        base_fee = w3.eth.get_block('latest').baseFeePerGas
+        priority_fee = w3.eth.max_priority_fee
+        max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
+        tx = router.functions.exactInput(params).build_transaction({
+            'chainId': 8453,
+            'gas': 500000,
+            'maxFeePerGas': max_fee_per_gas,
+            'maxPriorityFeePerGas': priority_fee,
+            'nonce': nonce,
+            'value': amount_wei,
+            'from': address
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_link = f"https://basescan.org/tx/{tx_hash.hex()}"
+        print(f"✅ Transaction envoyée ! Hash : {tx_hash.hex()} | Voir : {tx_link}")
+        try:
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            if receipt.status == 1:
+                print("✅ Transaction confirmée avec succès!")
+                return {"status": "ok", "tx_hash": tx_hash.hex(), "tx_link": tx_link}
+            else:
+                print("❌ La transaction a échoué")
+                return {"status": "error", "message": "La transaction a échoué", "tx_link": tx_link}
+        except Exception as e:
+            print(f"⚠️ Timeout en attendant la confirmation. Voir : {tx_link}")
+            return {"status": "error", "message": f"Timeout confirmation: {str(e)}", "tx_link": tx_link}
+    except Exception as e:
+        print(f"❌ Erreur webhook achat : {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 # --- Webhook HTTP pour achat automatisé ---
 flask_app = Flask(__name__)
 
@@ -747,25 +871,12 @@ def buy_webhook():
     amount_eth = data.get('amount_eth')
     if not token_address or not amount_eth:
         return jsonify({'status': 'error', 'message': 'token_address et amount_eth requis'}), 400
-    try:
-        # Appel direct à la logique d'achat (hors Telegram)
-        # On crée un faux update/context pour réutiliser buy_token
-        class FakeMessage:
-            def __init__(self):
-                self.chat_id = None
-            async def reply_text(self, text, **kwargs):
-                print(f"[WEBHOOK] {text}")
-        class FakeUpdate:
-            def __init__(self):
-                self.message = FakeMessage()
-        class FakeContext:
-            def __init__(self, token_address, amount_eth):
-                self.args = [token_address, str(amount_eth)]
-        import asyncio
-        asyncio.run(buy_token(FakeUpdate(), FakeContext(token_address, amount_eth)))
-        return jsonify({'status': 'ok', 'message': 'Achat déclenché'}), 200
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    import asyncio
+    result = asyncio.run(buy_token_webhook(token_address, float(amount_eth)))
+    if result.get('status') == 'ok':
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 500
 
 def run_flask():
     flask_app.run(host='0.0.0.0', port=5000)
