@@ -615,27 +615,68 @@ async def buy_token_auto(app, user_id, token_address, amount_eth):
 # Commande /prebuy <FID> <amount en eth>
 async def prebuy_command(update: Update, context: CallbackContext):
     try:
+        # Vérification du nombre d'arguments
         if len(context.args) != 2:
-            await update.message.reply_text("❌ Format : /prebuy <FID> <montant_eth>")
+            await update.message.reply_text(
+                "❌ Format incorrect\n"
+                "Utilisation : /prebuy <FID> <montant_eth>\n"
+                "Exemple : /prebuy 123456 0.1"
+            )
             return
         
+        # Vérification du FID
         fid = context.args[0]
+        if not fid.isdigit():
+            await update.message.reply_text(
+                "❌ FID invalide\n"
+                "Le FID doit être un nombre.\n"
+                f"FID reçu : {fid}"
+            )
+            return
+        
+        # Vérification du montant
         try:
             amount_eth = float(context.args[1])
-        except ValueError:
-            await update.message.reply_text("❌ Montant ETH invalide")
+            if amount_eth <= 0:
+                raise ValueError("Le montant doit être positif")
+        except ValueError as e:
+            await update.message.reply_text(
+                "❌ Montant ETH invalide\n"
+                f"Erreur : {str(e)}\n"
+                f"Montant reçu : {context.args[1]}"
+            )
             return
         
+        # Récupération de l'ID utilisateur
         user_id = update.effective_user.id
         print(f"[PREBUY] Commande reçue - FID: {fid}, Montant: {amount_eth} ETH, User: {user_id}")
         
+        # Vérification si un prebuy existe déjà pour ce FID
+        if fid in prebuys:
+            old_amount = prebuys[fid]["amount_eth"]
+            await update.message.reply_text(
+                f"⚠️ Un prebuy existe déjà pour le FID {fid}\n"
+                f"Ancien montant : {old_amount} ETH\n"
+                f"Nouveau montant : {amount_eth} ETH\n"
+                "Le prebuy a été mis à jour."
+            )
+        
+        # Sauvegarde du prebuy
         prebuys[fid] = {"amount_eth": amount_eth, "user_id": user_id}
         print(f"[PREBUY] Configuration sauvegardée - Prebuys actifs: {prebuys}")
         
-        await update.message.reply_text(f"✅ Prebuy activé pour FID {fid} avec {amount_eth} ETH.")
+        # Message de confirmation
+        await update.message.reply_text(
+            f"✅ Prebuy activé avec succès !\n"
+            f"FID : {fid}\n"
+            f"Montant : {amount_eth} ETH\n"
+            f"Le bot surveillera les nouveaux tokens de ce FID."
+        )
+        
     except Exception as e:
+        error_msg = f"❌ Erreur lors de la configuration du prebuy :\n{str(e)}"
         print(f"[PREBUY] Erreur: {str(e)}")
-        await update.message.reply_text(f"❌ Erreur lors de la configuration du prebuy: {str(e)}")
+        await update.message.reply_text(error_msg)
 
 # Ajout du handler dans la fonction de démarrage du bot
 # (à placer dans la fonction main ou équivalent)
