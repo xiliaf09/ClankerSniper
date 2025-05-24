@@ -406,98 +406,143 @@ class ClankerSniper:
             return False
 
 async def buy_token(update: Update, context: CallbackContext):
-    """Gère la commande /buy pour acheter un token avec debug détaillé sur la recherche de pool/liquidité (fee 1% uniquement, RPC Railway)"""
+    """Commande /buy : achat/swap Uniswap V3 fee 1% (logique robuste, RPC Railway, gestion Telegram asynchrone)"""
     try:
         if len(context.args) != 2:
-            raise ValueError(
-                "Format incorrect\n"
-                "Utilisation : /buy <adresse_token> <montant_eth>\n"
-                "Exemple : /buy 0x123... 0.1"
+            await update.message.reply_text(
+                "❌ Format incorrect\nUtilisation : /buy <adresse_token> <montant_eth>\nExemple : /buy 0x123... 0.1"
             )
-
+            return
         token_address = context.args[0]
         try:
             amount_eth = float(context.args[1])
         except ValueError:
-            raise ValueError("Le montant doit être un nombre valide")
-
+            await update.message.reply_text("❌ Le montant doit être un nombre valide")
+            return
         if not Web3.is_address(token_address):
-            raise ValueError("Adresse de token invalide")
-
-        amount_wei = Web3.to_wei(amount_eth, 'ether')
-        # Utilisation du RPC Railway
+            await update.message.reply_text("❌ Adresse de token invalide")
+            return
+        # Setup Web3
         rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
-        sniper = ClankerSniper(
-            rpc_url=rpc_url,
-            private_key=os.getenv("PRIVATE_KEY")
-        )
-        balance = sniper.w3.eth.get_balance(sniper.address)
-        balance_eth = Web3.from_wei(balance, 'ether')
-        await update.message.reply_text(
-            f"💰 Solde actuel : {balance_eth:.4f} ETH\n"
-            f"🎯 Montant à acheter : {amount_eth:.4f} ETH"
-        )
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        private_key = os.getenv("PRIVATE_KEY")
+        if not private_key:
+            await update.message.reply_text("❌ Clé privée manquante dans Railway")
+            return
+        account = Account.from_key(private_key)
+        address = account.address
+        # Vérif solde
+        balance = w3.eth.get_balance(address)
+        balance_eth = w3.from_wei(balance, 'ether')
+        await update.message.reply_text(f"💰 Solde actuel : {balance_eth:.4f} ETH\n🎯 Montant à acheter : {amount_eth:.4f} ETH")
+        amount_wei = w3.to_wei(amount_eth, 'ether')
         if balance < amount_wei:
-            raise ValueError(f"Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
-
-        await update.message.reply_text("🔍 Recherche de la pool 1% (fee 10000) et de la liquidité...")
-        fee = 10000
-        debug_msgs = []
-        found_pool = False
+            await update.message.reply_text(f"❌ Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
+            return
+        # Recherche pool fee 1% dans les deux sens
+        FACTORY = w3.to_checksum_address("0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
+        WETH = w3.to_checksum_address("0x4200000000000000000000000000000000000006")
+        FEE = 10000
+        factory_abi = [{
+            "inputs": [
+                {"internalType": "address", "name": "tokenA", "type": "address"},
+                {"internalType": "address", "name": "tokenB", "type": "address"},
+                {"internalType": "uint24", "name": "fee", "type": "uint24"}
+            ],
+            "name": "getPool",
+            "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+            "stateMutability": "view",
+            "type": "function"
+        }]
+        pool = None
+        direction = None
+        token = w3.to_checksum_address(token_address)
+        factory = w3.eth.contract(address=FACTORY, abi=factory_abi)
+        # Essai WETH -> token
+        pool_addr = factory.functions.getPool(WETH, token, FEE).call()
+        if pool_addr != "0x0000000000000000000000000000000000000000":
+            direction = 'WETH_TO_TOKEN'
+            pool = pool_addr
+        else:
+            # Essai token -> WETH
+            pool_addr = factory.functions.getPool(token, WETH, FEE).call()
+            if pool_addr != "0x0000000000000000000000000000000000000000":
+                direction = 'TOKEN_TO_WETH'
+                pool = pool_addr
+        if not pool:
+            await update.message.reply_text("❌ Pas de pool 1% trouvée dans les deux sens.")
+            return
+        # Vérif liquidité
+        pool_abi = [
+            {"inputs": [], "name": "liquidity", "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}], "stateMutability": "view", "type": "function"}
+        ]
+        pool_contract = w3.eth.contract(address=pool, abi=pool_abi)
+        liquidity = pool_contract.functions.liquidity().call()
+        if liquidity == 0:
+            await update.message.reply_text(f"❌ Pool trouvée ({pool}) mais pas de liquidité.")
+            return
+        await update.message.reply_text(f"✅ Pool trouvée : {pool}\n💧 Liquidité : {liquidity}")
+        # Construction du path Uniswap V3 (toujours WETH -> token)
+        def encode_path(token_in, fee, token_out):
+            return bytes.fromhex(token_in[2:] + hex(fee)[2:].zfill(6) + token_out[2:])
+        if direction == 'WETH_TO_TOKEN':
+            path = encode_path(WETH, FEE, token)
+        else:
+            path = encode_path(token, FEE, WETH)
+        # Construction de la tx
+        router_addr = w3.to_checksum_address("0x2626664c2603336E57B271c5C0b26F421741e481")
+        router_abi = [
+            {
+                "inputs": [
+                    {
+                        "components": [
+                            {"internalType": "bytes", "name": "path", "type": "bytes"},
+                            {"internalType": "address", "name": "recipient", "type": "address"},
+                            {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+                            {"internalType": "uint256", "name": "amountOutMinimum", "type": "uint256"}
+                        ],
+                        "internalType": "struct ISwapRouter.ExactInputParams",
+                        "name": "params",
+                        "type": "tuple"
+                    }
+                ],
+                "name": "exactInput",
+                "outputs": [{"internalType": "uint256", "name": "amountOut", "type": "uint256"}],
+                "stateMutability": "payable",
+                "type": "function"
+            }
+        ]
+        router = w3.eth.contract(address=router_addr, abi=router_abi)
+        params = {
+            'path': path,
+            'recipient': address,
+            'amountIn': amount_wei,
+            'amountOutMinimum': 0
+        }
+        nonce = w3.eth.get_transaction_count(address)
+        base_fee = w3.eth.get_block('latest').baseFeePerGas
+        priority_fee = w3.eth.max_priority_fee
+        max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
+        tx = router.functions.exactInput(params).build_transaction({
+            'chainId': 8453,
+            'gas': 500000,
+            'maxFeePerGas': max_fee_per_gas,
+            'maxPriorityFeePerGas': priority_fee,
+            'nonce': nonce,
+            'value': amount_wei,
+            'from': address
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_link = f"https://basescan.org/tx/{tx_hash.hex()}"
+        await update.message.reply_text(f"✅ Transaction envoyée !\nHash : `{tx_hash.hex()}`\n🔍 [Voir sur Basescan]({tx_link})", parse_mode='Markdown')
         try:
-            # Recherche de la pool
-            factory_contract = sniper.w3.eth.contract(
-                address="0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
-                abi=[{
-                    "inputs": [
-                        {"internalType": "address", "name": "tokenA", "type": "address"},
-                        {"internalType": "address", "name": "tokenB", "type": "address"},
-                        {"internalType": "uint24", "name": "fee", "type": "uint24"}
-                    ],
-                    "name": "getPool",
-                    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                    "stateMutability": "view",
-                    "type": "function"
-                }]
-            )
-            pool_address = factory_contract.functions.getPool(sniper.WETH_ADDRESS, token_address, fee).call()
-            if pool_address == "0x0000000000000000000000000000000000000000":
-                debug_msgs.append(f"Fee 1.00% : ❌ Pas de pool trouvée.")
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            if receipt.status == 1:
+                await update.message.reply_text("✅ Transaction confirmée avec succès!")
             else:
-                # Vérification de la liquidité
-                pool_contract = sniper.w3.eth.contract(
-                    address=pool_address,
-                    abi=[{
-                        "inputs": [],
-                        "name": "liquidity",
-                        "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
-                        "stateMutability": "view",
-                        "type": "function"
-                    }]
-                )
-                liquidity = pool_contract.functions.liquidity().call()
-                # Estimation du montant out
-                min_out = 0
-                try:
-                    min_out = sniper.get_amount_out(sniper.WETH_ADDRESS, token_address, amount_wei, 0)
-                except Exception as e:
-                    min_out = f"Erreur Quoter: {str(e)}"
-                debug_msgs.append(f"Fee 1.00% :\n  Pool: {pool_address}\n  Liquidité: {liquidity}\n  Estimation Quoter: {min_out}")
-                if liquidity > 0 and isinstance(min_out, int) and min_out > 0:
-                    found_pool = True
+                await update.message.reply_text("❌ La transaction a échoué")
         except Exception as e:
-            debug_msgs.append(f"Fee 1.00% : Erreur: {str(e)}")
-        await update.message.reply_text("\n\n".join(debug_msgs))
-        if not found_pool:
-            raise ValueError("Aucune pool 1% avec liquidité suffisante trouvée pour ce token.")
-        # Exécution du swap si une pool valide a été trouvée
-        await update.message.reply_text("🔄 Exécution du swap...")
-        tx_hash = sniper.swap_eth_for_token(token_address, amount_wei, min_out if isinstance(min_out, int) else 0)
-        if not tx_hash:
-            raise ValueError("Échec du swap - Aucun hash de transaction retourné")
-        await update.message.reply_text(
-            f"✅ Swap exécuté avec succès !\n"
-            f"🔗 Transaction : https://basescan.org/tx/{tx_hash}"
-        )
+            await update.message.reply_text(f"⚠️ Timeout en attendant la confirmation.\nVérifiez le statut sur Basescan : [Voir transaction]({tx_link})", parse_mode='Markdown')
     except Exception as e:
-        raise 
+        await update.message.reply_text(f"❌ Erreur : {str(e)}") 
