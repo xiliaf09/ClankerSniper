@@ -406,9 +406,8 @@ class ClankerSniper:
             return False
 
 async def buy_token(update: Update, context: CallbackContext):
-    """Gère la commande /buy pour acheter un token"""
+    """Gère la commande /buy pour acheter un token avec debug détaillé sur la recherche de pool/liquidité"""
     try:
-        # Vérification des arguments
         if len(context.args) != 2:
             raise ValueError(
                 "Format incorrect\n"
@@ -416,55 +415,88 @@ async def buy_token(update: Update, context: CallbackContext):
                 "Exemple : /buy 0x123... 0.1"
             )
 
-        # Récupération des arguments
         token_address = context.args[0]
         try:
             amount_eth = float(context.args[1])
         except ValueError:
             raise ValueError("Le montant doit être un nombre valide")
 
-        # Vérification de l'adresse du token
         if not Web3.is_address(token_address):
             raise ValueError("Adresse de token invalide")
 
-        # Conversion en wei
         amount_wei = Web3.to_wei(amount_eth, 'ether')
-
-        # Création de l'instance ClankerSniper
         sniper = ClankerSniper(
             rpc_url="https://mainnet.base.org",
             private_key=os.getenv("PRIVATE_KEY")
         )
-
-        # Vérification du solde
         balance = sniper.w3.eth.get_balance(sniper.address)
         balance_eth = Web3.from_wei(balance, 'ether')
-        
         await update.message.reply_text(
             f"💰 Solde actuel : {balance_eth:.4f} ETH\n"
             f"🎯 Montant à acheter : {amount_eth:.4f} ETH"
         )
-
         if balance < amount_wei:
             raise ValueError(f"Solde insuffisant : {balance_eth:.4f} ETH < {amount_eth:.4f} ETH")
 
-        # Vérification de la liquidité
-        await update.message.reply_text("🔍 Vérification de la liquidité...")
-        if not sniper.check_pool_exists(token_address):
-            raise ValueError("Pas de pool avec liquidité trouvée")
-
-        # Exécution du swap
+        await update.message.reply_text("🔍 Recherche des pools et de la liquidité...")
+        fee_tiers = [500, 3000, 10000]
+        debug_msgs = []
+        found_pool = False
+        for fee in fee_tiers:
+            try:
+                # Recherche de la pool
+                factory_contract = sniper.w3.eth.contract(
+                    address="0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+                    abi=[{
+                        "inputs": [
+                            {"internalType": "address", "name": "tokenA", "type": "address"},
+                            {"internalType": "address", "name": "tokenB", "type": "address"},
+                            {"internalType": "uint24", "name": "fee", "type": "uint24"}
+                        ],
+                        "name": "getPool",
+                        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }]
+                )
+                pool_address = factory_contract.functions.getPool(sniper.WETH_ADDRESS, token_address, fee).call()
+                if pool_address == "0x0000000000000000000000000000000000000000":
+                    debug_msgs.append(f"Fee {fee/10000:.2%} : ❌ Pas de pool trouvée.")
+                    continue
+                # Vérification de la liquidité
+                pool_contract = sniper.w3.eth.contract(
+                    address=pool_address,
+                    abi=[{
+                        "inputs": [],
+                        "name": "liquidity",
+                        "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }]
+                )
+                liquidity = pool_contract.functions.liquidity().call()
+                # Estimation du montant out
+                min_out = 0
+                try:
+                    min_out = sniper.get_amount_out(sniper.WETH_ADDRESS, token_address, amount_wei, 0)
+                except Exception as e:
+                    min_out = f"Erreur Quoter: {str(e)}"
+                debug_msgs.append(f"Fee {fee/10000:.2%} :\n  Pool: {pool_address}\n  Liquidité: {liquidity}\n  Estimation Quoter: {min_out}")
+                if liquidity > 0 and isinstance(min_out, int) and min_out > 0:
+                    found_pool = True
+            except Exception as e:
+                debug_msgs.append(f"Fee {fee/10000:.2%} : Erreur: {str(e)}")
+        await update.message.reply_text("\n\n".join(debug_msgs))
+        if not found_pool:
+            raise ValueError("Aucune pool avec liquidité suffisante trouvée pour ce token.")
+        # Exécution du swap si une pool valide a été trouvée
         await update.message.reply_text("🔄 Exécution du swap...")
         tx_hash = sniper.swap_eth_for_token(token_address, amount_wei)
-
         if not tx_hash:
             raise ValueError("Échec du swap - Aucun hash de transaction retourné")
-
         await update.message.reply_text(
             f"✅ Swap exécuté avec succès !\n"
             f"🔗 Transaction : https://basescan.org/tx/{tx_hash}"
         )
-
     except Exception as e:
-        # Propager l'erreur pour qu'elle soit gérée par le gestionnaire d'erreurs
         raise 
