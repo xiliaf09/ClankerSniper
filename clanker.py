@@ -560,7 +560,8 @@ async def monitor_new_clankers(app):
     global last_token_id
     while True:
         try:
-            resp = requests.get("https://www.clanker.world/api/tokens?sort=desc&page=1")
+            # Utiliser l'URL correcte de l'API Clanker
+            resp = requests.get("https://api.clanker.xyz/tokens?sort=desc&page=1")
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("data"):
@@ -568,10 +569,12 @@ async def monitor_new_clankers(app):
                     if latest["id"] != last_token_id:
                         last_token_id = latest["id"]
                         fid = str(latest.get("requestor_fid"))
+                        print(f"[MONITOR] Nouveau token détecté pour FID {fid}")
                         if fid in prebuys:
                             prebuy = prebuys[fid]
                             user_id = prebuy["user_id"]
                             amount_eth = prebuy["amount_eth"]
+                            print(f"[MONITOR] Prebuy trouvé pour FID {fid}: {amount_eth} ETH")
                             # Message Telegram
                             await app.bot.send_message(
                                 chat_id=user_id,
@@ -608,18 +611,28 @@ async def buy_token_auto(app, user_id, token_address, amount_eth):
 
 # Commande /prebuy <FID> <amount en eth>
 async def prebuy_command(update: Update, context: CallbackContext):
-    if len(context.args) != 2:
-        await update.message.reply_text("❌ Format : /prebuy <FID> <montant_eth>")
-        return
-    fid = context.args[0]
     try:
-        amount_eth = float(context.args[1])
-    except ValueError:
-        await update.message.reply_text("❌ Montant ETH invalide")
-        return
-    user_id = update.effective_user.id
-    prebuys[fid] = {"amount_eth": amount_eth, "user_id": user_id}
-    await update.message.reply_text(f"✅ Prebuy activé pour FID {fid} avec {amount_eth} ETH.")
+        if len(context.args) != 2:
+            await update.message.reply_text("❌ Format : /prebuy <FID> <montant_eth>")
+            return
+        
+        fid = context.args[0]
+        try:
+            amount_eth = float(context.args[1])
+        except ValueError:
+            await update.message.reply_text("❌ Montant ETH invalide")
+            return
+        
+        user_id = update.effective_user.id
+        print(f"[PREBUY] Commande reçue - FID: {fid}, Montant: {amount_eth} ETH, User: {user_id}")
+        
+        prebuys[fid] = {"amount_eth": amount_eth, "user_id": user_id}
+        print(f"[PREBUY] Configuration sauvegardée - Prebuys actifs: {prebuys}")
+        
+        await update.message.reply_text(f"✅ Prebuy activé pour FID {fid} avec {amount_eth} ETH.")
+    except Exception as e:
+        print(f"[PREBUY] Erreur: {str(e)}")
+        await update.message.reply_text(f"❌ Erreur lors de la configuration du prebuy: {str(e)}")
 
 # Ajout du handler dans la fonction de démarrage du bot
 # (à placer dans la fonction main ou équivalent)
