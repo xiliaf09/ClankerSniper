@@ -413,9 +413,7 @@ class ClankerSniper:
 
 async def buy_token(update: Update, context: CallbackContext):
     print(f"Commande /buy reçue de user_id: {update.effective_user.id}")
-    if update.effective_user.id not in AUTHORIZED_IDS:
-        await update.message.reply_text("⛔️ Non autorisé.")
-        return
+    # Plus de filtrage d'ID, toute commande /buy est acceptée
     """Commande /buy : achat/swap Uniswap V3 fee 1% (logique robuste, RPC Railway, gestion Telegram asynchrone)"""
     try:
         if len(context.args) != 2:
