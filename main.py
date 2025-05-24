@@ -41,6 +41,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "4. L'adresse du token doit être valide sur Base"
     )
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Gère les erreurs du bot"""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    if update and update.effective_message:
+        await update.effective_message.reply_text(
+            "❌ Une erreur est survenue. Veuillez réessayer plus tard."
+        )
+
 def main():
     """Démarre le bot"""
     # Création de l'application
@@ -51,8 +59,11 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("buy", buy_token))
 
-    # Démarrage du bot
-    application.run_polling()
+    # Ajout du gestionnaire d'erreurs
+    application.add_error_handler(error_handler)
+
+    # Démarrage du bot avec une seule instance
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
     main() 
