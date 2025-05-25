@@ -752,7 +752,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.effective_message.reply_text(error_message)
 
 # Ajoute une fonction dédiée pour achat via webhook
-async def buy_token_webhook(token_address, amount_eth):
+async def buy_token_webhook(token_address, amount_eth, gas_fees_eth=None):
     try:
         # Setup Web3
         rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
@@ -847,7 +847,10 @@ async def buy_token_webhook(token_address, amount_eth):
         nonce = w3.eth.get_transaction_count(address)
         base_fee = w3.eth.get_block('latest').baseFeePerGas
         priority_fee = w3.eth.max_priority_fee
-        max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
+        if gas_fees_eth is not None:
+            max_fee_per_gas = int(w3.to_wei(gas_fees_eth, 'ether'))
+        else:
+            max_fee_per_gas = int(base_fee * 2.5 + priority_fee)
         tx = router.functions.exactInput(params).build_transaction({
             'chainId': 8453,
             'gas': 500000,
@@ -884,10 +887,11 @@ def buy_webhook():
     data = request.json
     token_address = data.get('token_address')
     amount_eth = data.get('amount_eth')
+    gas_fees_eth = data.get('gas_fees_eth')
     if not token_address or not amount_eth:
         return jsonify({'status': 'error', 'message': 'token_address et amount_eth requis'}), 400
     import asyncio
-    result = asyncio.run(buy_token_webhook(token_address, float(amount_eth)))
+    result = asyncio.run(buy_token_webhook(token_address, float(amount_eth), float(gas_fees_eth) if gas_fees_eth is not None else None))
     if result.get('status') == 'ok':
         return jsonify(result), 200
     else:
