@@ -723,6 +723,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Commandes disponibles :\n"
         "/buy <adresse_token> <montant_eth> - Acheter un token\n"
         "/prebuy <FID> <montant_eth> - Snipe auto sur FID\n"
+        "/buyv4 <token_address> <amount_eth> <max_fee_per_gas> - Acheter V4\n"
         "/help - Afficher l'aide"
     )
 
@@ -735,6 +736,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Pour snip auto un FID :\n"
         "   /prebuy <FID> <montant_eth>\n"
         "   Exemple : /prebuy 123456 0.1\n\n"
+        "3. Pour acheter V4 :\n"
+        "   /buyv4 <token_address> <amount_eth> <max_fee_per_gas>\n"
+        "   Exemple : /buyv4 0x123... 0.1 0.00000005\n\n"
         "Le bot surveille automatiquement les nouveaux tokens Clanker et déclenche un achat si un snipe est configuré pour le FID concerné."
     )
 
@@ -903,12 +907,111 @@ def run_flask():
 # --- Démarrage du serveur Flask en thread ---
 threading.Thread(target=run_flask, daemon=True).start()
 
+# ABI minimal Universal Router V4 (swapExactTokensForTokens)
+UNIVERSAL_ROUTER_V4 = '0x6ff5693b99212da76ad316178a184ab56d299b43'
+WETH_ADDRESS = '0x4200000000000000000000000000000000000006'
+UNIVERSAL_ROUTER_ABI = [
+    {
+        "inputs": [
+            { "internalType": "address", "name": "tokenIn", "type": "address" },
+            { "internalType": "address", "name": "tokenOut", "type": "address" },
+            { "internalType": "uint256", "name": "amountIn", "type": "uint256" },
+            { "internalType": "uint256", "name": "amountOutMin", "type": "uint256" },
+            { "internalType": "address", "name": "to", "type": "address" },
+            { "internalType": "uint256", "name": "deadline", "type": "uint256" }
+        ],
+        "name": "swapExactTokensForTokens",
+        "outputs": [
+            { "internalType": "uint256[]", "name": "amounts", "type": "uint256[]" }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]
+
+async def buyv4_command(update: Update, context: CallbackContext):
+    await update.message.reply_text("🟦 Commande /buyv4 reçue. Début du process...")
+    if len(context.args) != 3:
+        await update.message.reply_text("❌ Format : /buyv4 <token_address> <amount_eth> <max_fee_per_gas>")
+        return
+    token_address = context.args[0]
+    amount = context.args[1]
+    max_fee_per_gas = context.args[2]
+    await update.message.reply_text(f"🔹 Paramètres reçus :\nToken : {token_address}\nMontant : {amount} ETH\nMaxFeePerGas : {max_fee_per_gas}")
+    try:
+        # Setup Web3
+        rpc_url = os.getenv("QUICKNODE_RPC") or os.getenv("RPC_URL") or "https://mainnet.base.org"
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        private_key = os.getenv("PRIVATE_KEY")
+        if not private_key:
+            await update.message.reply_text("❌ Clé privée manquante dans Railway")
+            return
+        account = w3.eth.account.from_key(private_key)
+        address = account.address
+        # Vérif solde WETH
+        weth_contract = w3.eth.contract(address=WETH_ADDRESS, abi=[
+            {"constant":True,"inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"},
+            {"constant":False,"inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":False,"stateMutability":"nonpayable","type":"function"}
+        ])
+        amount_wei = w3.to_wei(float(amount), 'ether')
+        weth_balance = w3.eth.get_balance(address)
+        if weth_balance < amount_wei:
+            await update.message.reply_text(f"❌ Solde WETH insuffisant : {w3.from_wei(weth_balance, 'ether')} < {amount}")
+            return
+        # Approve si besoin
+        allowance = weth_contract.functions.allowance(address, UNIVERSAL_ROUTER_V4).call()
+        if allowance < amount_wei:
+            await update.message.reply_text("⏳ Approbation du router pour WETH...")
+            approve_tx = weth_contract.functions.approve(UNIVERSAL_ROUTER_V4, amount_wei).build_transaction({
+                'from': address,
+                'nonce': w3.eth.get_transaction_count(address),
+                'gas': 60000,
+                'gasPrice': w3.eth.gas_price
+            })
+            signed_approve = w3.eth.account.sign_transaction(approve_tx, private_key)
+            approve_hash = w3.eth.send_raw_transaction(signed_approve.rawTransaction)
+            w3.eth.wait_for_transaction_receipt(approve_hash)
+            await update.message.reply_text(f"✅ Approbation confirmée. Tx : {approve_hash.hex()}")
+        # Prépare le swap
+        router = w3.eth.contract(address=UNIVERSAL_ROUTER_V4, abi=UNIVERSAL_ROUTER_ABI)
+        amountOutMin = 0  # Slippage à 0 par défaut
+        deadline = int(time.time()) + 600
+        tx = router.functions.swapExactTokensForTokens(
+            WETH_ADDRESS,
+            token_address,
+            amount_wei,
+            amountOutMin,
+            address,
+            deadline
+        ).build_transaction({
+            'from': address,
+            'nonce': w3.eth.get_transaction_count(address),
+            'gas': 500000,
+            'maxFeePerGas': int(float(max_fee_per_gas) * 1e9),
+            'maxPriorityFeePerGas': int(1e9),
+            'chainId': 8453
+        })
+        signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        await update.message.reply_text(f"✅ Transaction envoyée !\nHash : {tx_hash.hex()}\n🔍 https://basescan.org/tx/{tx_hash.hex()}")
+        try:
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            if receipt.status == 1:
+                await update.message.reply_text("✅ Transaction confirmée avec succès!")
+            else:
+                await update.message.reply_text("❌ La transaction a échoué")
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Timeout en attendant la confirmation. Voir : https://basescan.org/tx/{tx_hash.hex()}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erreur lors de l'achat V4 : {str(e)}")
+
 def main():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("buy", buy_token))
     application.add_handler(CommandHandler("prebuy", prebuy_command))
+    application.add_handler(CommandHandler("buyv4", buyv4_command))
     application.add_error_handler(error_handler)
     # Démarrage du monitoring asynchrone
     application.post_init = lambda app: asyncio.create_task(monitor_new_clankers(app))
