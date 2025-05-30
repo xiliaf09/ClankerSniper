@@ -930,6 +930,8 @@ UNIVERSAL_ROUTER_ABI = [
 ]
 
 async def buyv4_command(update: Update, context: CallbackContext):
+    print("[DEBUG] buyv4_command appelée")
+    await update.message.reply_text("Handler buyv4 bien appelé ! (debug)")
     await update.message.reply_text("🟦 Commande /buyv4 reçue. Début du process...")
     if len(context.args) != 3:
         await update.message.reply_text("❌ Format : /buyv4 <token_address> <amount_eth> <max_fee_per_gas>")
